@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Centralized PDP design tokens, mirroring tailwind.config.ts one-for-one.
+ * These exist for the rare case that raw CSS/inline styles need a color the
+ * Tailwind utility classes can't reach (e.g. an SVG/canvas chart or a
+ * third-party widget) — components should still prefer Tailwind classes
+ * (bg-brand-600, text-success-700, etc.) over reading these directly.
+ */
+:root {
+  color-scheme: light;
+
+  --pdp-green-light: #6ee7b7;
+  --pdp-green: #0f7a47;
+  --pdp-green-dark: #0b5c36;
+  --pdp-red-light: #f3a1a8;
+  --pdp-red: #ce1126;
+  --pdp-red-dark: #9c0d1d;
+
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+  --info: #0369a1;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 10px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  @apply bg-slate-50 font-sans text-[14px] text-slate-900 antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  @apply font-heading;
+}
+
+::selection {
+  @apply bg-brand-200;
+}
+
+/* A single, consistent focus treatment for every interactive element —
+   never remove focus rings, only restyle them (Swiss-style: precise, not
+   decorative). Skipped for mouse users via :focus-visible. */
+:focus-visible {
+  outline: 2px solid theme('colors.brand.600');
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

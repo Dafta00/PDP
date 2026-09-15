@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.next/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+coverage/
+.turbo/
+apps/api/generated/
+apps/web/.next/
+apps/api/dist/
+uploads/
+apps/api/document-storage/

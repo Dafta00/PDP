@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pdp_gombe_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdp
+      POSTGRES_PASSWORD: pdp_dev_password
+      POSTGRES_DB: pdp_gombe_central
+    ports:
+      - "127.0.0.1:5439:5432"
+    volumes:
+      - pdp_pgdata:/var/lib/postgresql/data
+
+volumes:
+  pdp_pgdata:

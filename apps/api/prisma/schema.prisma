@@ -1,0 +1,537 @@
+// PDP Gombe Central Management Platform — Database Schema
+// Phase 2/3 scope: auth, organizational hierarchy, membership, audit logging.
+// Additional modules (events, resources, distributions, documents) will extend
+// this schema additively in later phases without reshaping what's here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Auth / RBAC
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  STATE_ADMIN
+  SENATORIAL_ADMIN
+  LGA_ADMIN
+  WARD_ADMIN
+  POLLING_UNIT_OFFICER
+  DATA_ENTRY_OFFICER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  status       UserStatus @default(ACTIVE)
+
+  // Organizational scope — set according to role.
+  // LGA_ADMIN -> lgaId, WARD_ADMIN -> wardId, POLLING_UNIT_OFFICER -> pollingUnitId.
+  lgaId         String?
+  lga           LGA?         @relation(fields: [lgaId], references: [id])
+  wardId        String?
+  ward          Ward?        @relation(fields: [wardId], references: [id])
+  pollingUnitId String?
+  pollingUnit   PollingUnit? @relation(fields: [pollingUnitId], references: [id])
+
+  refreshTokens                RefreshToken[]
+  membersCreated               Member[]              @relation("MemberCreatedBy")
+  auditLogs                    AuditLog[]
+  eventsOrganized              Event[]               @relation("EventOrganizer")
+  attendancesRecorded          Attendance[]          @relation("AttendanceRecordedBy")
+  resourcesCreated             Resource[]            @relation("ResourceCreatedBy")
+  resourceAllocations          ResourceAllocation[]  @relation("ResourceAllocatedBy")
+  resourceTransactions         ResourceTransaction[] @relation("ResourceTransactionRecordedBy")
+  distributionsOrganized       Distribution[]        @relation("DistributionOrganizer")
+  distributionReceiptsRecorded DistributionReceipt[] @relation("ReceiptOfficer")
+  distributionReceiptsReversed DistributionReceipt[] @relation("ReceiptReversedBy")
+  documentsUploaded            Document[]            @relation("DocumentUploadedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Organizational Hierarchy
+// State -> SenatorialDistrict -> LGA -> Ward -> PollingUnit
+// ─────────────────────────────────────────────────────────────────────────
+
+model State {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  districts SenatorialDistrict[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model SenatorialDistrict {
+  id      String @id @default(cuid())
+  name    String
+  stateId String
+  state   State  @relation(fields: [stateId], references: [id])
+  lgas    LGA[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stateId, name])
+}
+
+model LGA {
+  id                   String               @id @default(cuid())
+  name                 String
+  senatorialDistrictId String
+  senatorialDistrict   SenatorialDistrict   @relation(fields: [senatorialDistrictId], references: [id])
+  wards                Ward[]
+  users                User[]
+  members              Member[]
+  events               Event[]
+  resourceAllocations  ResourceAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([senatorialDistrictId, name])
+}
+
+model Ward {
+  id    String @id @default(cuid())
+  name  String
+  lgaId String
+  lga   LGA    @relation(fields: [lgaId], references: [id])
+
+  pollingUnits        PollingUnit[]
+  users               User[]
+  members             Member[]
+  events              Event[]
+  resourceAllocations ResourceAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([lgaId, name])
+}
+
+model PollingUnit {
+  id     String  @id @default(cuid())
+  name   String
+  code   String?
+  wardId String
+  ward   Ward    @relation(fields: [wardId], references: [id])
+
+  users               User[]
+  members             Member[]
+  events              Event[]
+  resourceAllocations ResourceAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([wardId, name])
+}
+
+// Atomic per-key sequence generator (e.g. "member-2026") backing human-readable
+// membership IDs. Row-level atomic increments make it safe under concurrency.
+model Counter {
+  id    String @id
+  value Int    @default(0)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Membership
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum MemberStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Member {
+  id           String @id @default(cuid())
+  membershipId String @unique // e.g. PDP-GC-2026-000001
+
+  firstName   String
+  middleName  String?
+  surname     String
+  gender      Gender
+  dateOfBirth DateTime
+  phone       String
+  email       String?
+  address     String?
+  occupation  String?
+
+  pollingUnitId String
+  pollingUnit   PollingUnit @relation(fields: [pollingUnitId], references: [id])
+  wardId        String
+  ward          Ward        @relation(fields: [wardId], references: [id])
+  lgaId         String
+  lga           LGA         @relation(fields: [lgaId], references: [id])
+
+  status     MemberStatus @default(PENDING)
+  photoUrl   String?
+  dateJoined DateTime     @default(now())
+
+  qrCode               MemberQRCode?
+  attendances          Attendance[]
+  distributionReceipts DistributionReceipt[]
+
+  createdById String?
+  createdBy   User?   @relation("MemberCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+  @@index([status])
+  @@index([surname, firstName])
+  @@index([phone])
+}
+
+enum QRCodeStatus {
+  ACTIVE
+  REVOKED
+}
+
+model MemberQRCode {
+  id        String       @id @default(cuid())
+  memberId  String       @unique
+  member    Member       @relation(fields: [memberId], references: [id])
+  token     String       @unique // opaque verification token, no PII encoded
+  status    QRCodeStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  revokedAt DateTime?
+
+  @@index([token])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit Log — immutable via application layer (no update/delete endpoints)
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Activities — Events & Attendance
+// ─────────────────────────────────────────────────────────────────────────
+
+enum EventStatus {
+  DRAFT
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  location    String
+  status      EventStatus @default(DRAFT)
+
+  // Target organizational unit — the most specific one chosen, with the
+  // ancestor fields denormalized alongside it (mirrors Member) so scoping
+  // a query to "what can this user see" is a plain equality/OR filter.
+  // All three null means the event is district-wide.
+  targetLgaId         String?
+  targetLga           LGA?         @relation(fields: [targetLgaId], references: [id])
+  targetWardId        String?
+  targetWard          Ward?        @relation(fields: [targetWardId], references: [id])
+  targetPollingUnitId String?
+  targetPollingUnit   PollingUnit? @relation(fields: [targetPollingUnitId], references: [id])
+
+  organizerId String
+  organizer   User   @relation("EventOrganizer", fields: [organizerId], references: [id])
+
+  attendances Attendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([targetLgaId])
+  @@index([targetWardId])
+  @@index([targetPollingUnitId])
+  @@index([startTime])
+}
+
+// Shared by Attendance and Distribution receipts — however the officer
+// identified the member during verification.
+enum VerificationMethod {
+  QR
+  MEMBERSHIP_ID
+  SEARCH
+}
+
+model Attendance {
+  id       String @id @default(cuid())
+  eventId  String
+  event    Event  @relation(fields: [eventId], references: [id])
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+
+  method      VerificationMethod
+  checkedInAt DateTime           @default(now())
+
+  recordedById String?
+  recordedBy   User?   @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+
+  // Database-level duplicate-checkin prevention — the single source of
+  // truth, not just an application-level check (which still races).
+  @@unique([eventId, memberId])
+  @@index([eventId])
+  @@index([memberId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Resources — inventory, allocation to organizational units, and usage
+// ─────────────────────────────────────────────────────────────────────────
+
+model Resource {
+  id          String  @id @default(cuid())
+  name        String
+  unit        String? // e.g. "bags", "cartons", "pieces"
+  description String?
+
+  totalQuantity     Int // ever received, including restocks
+  remainingQuantity Int // not yet allocated to any organizational unit
+
+  createdById String?
+  createdBy   User?   @relation("ResourceCreatedBy", fields: [createdById], references: [id])
+
+  allocations   ResourceAllocation[]
+  distributions Distribution[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ResourceAllocation {
+  id         String   @id @default(cuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id])
+
+  quantity          Int // originally allocated to this unit
+  remainingQuantity Int // not yet used/distributed from this allocation
+  notes             String?
+
+  // Denormalized target ancestor chain, same pattern as Event — every
+  // allocation targets a concrete unit (no district-wide allocation).
+  targetLgaId         String
+  targetLga           LGA          @relation(fields: [targetLgaId], references: [id])
+  targetWardId        String?
+  targetWard          Ward?        @relation(fields: [targetWardId], references: [id])
+  targetPollingUnitId String?
+  targetPollingUnit   PollingUnit? @relation(fields: [targetPollingUnitId], references: [id])
+
+  allocatedById String
+  allocatedBy   User   @relation("ResourceAllocatedBy", fields: [allocatedById], references: [id])
+
+  // Set when this allocation was made under a Distribution campaign rather
+  // than general-purpose resource management — both draw from the same
+  // Resource.remainingQuantity pool via the same atomic-decrement path.
+  distributionId String?
+  distribution   Distribution? @relation(fields: [distributionId], references: [id])
+
+  transactions ResourceTransaction[]
+  receipts     DistributionReceipt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resourceId])
+  @@index([targetLgaId])
+  @@index([targetWardId])
+  @@index([targetPollingUnitId])
+  @@index([distributionId])
+}
+
+enum ResourceTransactionType {
+  USAGE
+  ADJUSTMENT
+}
+
+model ResourceTransaction {
+  id           String             @id @default(cuid())
+  allocationId String
+  allocation   ResourceAllocation @relation(fields: [allocationId], references: [id])
+
+  type     ResourceTransactionType
+  quantity Int // USAGE: always positive (consumes remaining). ADJUSTMENT: signed correction.
+  notes    String?
+
+  recordedById String
+  recordedBy   User   @relation("ResourceTransactionRecordedBy", fields: [recordedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([allocationId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Distribution — a member-facing campaign distributing a Resource, built on
+// top of ResourceAllocation (org-scoped stock) and the shared member
+// VerificationService (same reuse pattern as Attendance sits on Events).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum DistributionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Distribution {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id])
+
+  status DistributionStatus @default(DRAFT)
+
+  organizerId String
+  organizer   User   @relation("DistributionOrganizer", fields: [organizerId], references: [id])
+
+  allocations ResourceAllocation[]
+  receipts    DistributionReceipt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resourceId])
+  @@index([status])
+}
+
+enum ReceiptStatus {
+  CONFIRMED
+  REVERSED
+}
+
+model DistributionReceipt {
+  id             String       @id @default(cuid())
+  distributionId String
+  distribution   Distribution @relation(fields: [distributionId], references: [id])
+
+  allocationId String
+  allocation   ResourceAllocation @relation(fields: [allocationId], references: [id])
+
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+
+  quantity Int                @default(1)
+  method   VerificationMethod
+  status   ReceiptStatus      @default(CONFIRMED)
+
+  officerId String
+  officer   User   @relation("ReceiptOfficer", fields: [officerId], references: [id])
+
+  reversedAt   DateTime?
+  reversedById String?
+  reversedBy   User?     @relation("ReceiptReversedBy", fields: [reversedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  // Database-level duplicate-receipt prevention. A reversed receipt is
+  // reactivated in place (see DistributionsService) rather than creating a
+  // second row, so this constraint holds even across reversal/re-issue.
+  @@unique([distributionId, memberId])
+  @@index([distributionId])
+  @@index([memberId])
+  @@index([allocationId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Documents — organizational file management. Files are stored OUTSIDE the
+// public /uploads static directory and served only through an authenticated,
+// permission-checked download endpoint (see DocumentsController) — a
+// document flagged `restrictedToAdmins` must never be reachable by URL alone.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum DocumentCategory {
+  REPORT
+  MEETING
+  ADMINISTRATIVE
+  POLICY
+  FORM
+  OTHER
+}
+
+model Document {
+  id          String           @id @default(cuid())
+  title       String
+  description String?
+  category    DocumentCategory
+
+  fileName       String // original filename, shown to users
+  storedFileName String @unique // randomized name on disk
+  mimeType       String
+  fileSize       Int // bytes
+
+  restrictedToAdmins Boolean @default(false)
+
+  uploadedById String
+  uploadedBy   User   @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([category])
+  @@index([restrictedToAdmins])
+}
