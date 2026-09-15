@@ -9,6 +9,7 @@ build/
 .DS_Store
 coverage/
 .turbo/
+*.tsbuildinfo
 apps/api/generated/
 apps/web/.next/
 apps/api/dist/
