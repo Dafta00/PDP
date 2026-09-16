@@ -7,6 +7,8 @@ export const ACTION_LABELS: Record<string, string> = {
   USER_UPDATED: 'User account updated',
   USER_ROLE_CHANGED: 'User role changed',
   USER_STATUS_CHANGED: 'User status changed',
+  USER_SCOPE_CHANGED: 'User scope changed',
+  USER_MANAGEMENT_DENIED: 'User management attempt denied',
   ORG_UNIT_CREATED: 'Organizational unit created',
   ORG_UNIT_UPDATED: 'Organizational unit updated',
   MEMBER_CREATED: 'Member registered',

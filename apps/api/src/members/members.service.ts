@@ -21,7 +21,7 @@ const MEMBER_LIST_SELECT = {
   status: true,
   photoUrl: true,
   dateJoined: true,
-  lga: { select: { id: true, name: true } },
+  lga: { select: { id: true, name: true, senatorialDistrict: { select: { id: true, name: true } } } },
   ward: { select: { id: true, name: true } },
   pollingUnit: { select: { id: true, name: true } },
 } satisfies Prisma.MemberSelect;
@@ -39,16 +39,20 @@ export class MembersService {
   async create(dto: CreateMemberDto, actor: AuthenticatedUser) {
     const pollingUnit = await this.prisma.pollingUnit.findUniqueOrThrow({
       where: { id: dto.pollingUnitId },
-      select: { id: true, wardId: true, ward: { select: { lgaId: true } } },
+      select: {
+        id: true,
+        wardId: true,
+        ward: { select: { lgaId: true, lga: { select: { senatorialDistrict: { select: { name: true } } } } } },
+      },
     });
 
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: pollingUnit.ward.lgaId,
       wardId: pollingUnit.wardId,
       pollingUnitId: pollingUnit.id,
     });
 
-    const membershipId = await this.membershipIdService.next();
+    const membershipId = await this.membershipIdService.next(pollingUnit.ward.lga.senatorialDistrict.name);
 
     const member = await this.prisma.member.create({
       data: {
@@ -90,10 +94,17 @@ export class MembersService {
 
     const scopeWhere = this.orgScope.memberScopeWhere(actor);
 
-    const filters: Prisma.MemberWhereInput = {
-      deletedAt: null,
-      ...scopeWhere,
+    // Query-supplied filters live in their own object and are combined with
+    // scopeWhere via `AND`, never a flat spread — a flat spread would let a
+    // query param with the same key (e.g. `lgaId`) silently *overwrite*
+    // scopeWhere's restriction instead of narrowing it, which would let a
+    // scoped actor (e.g. an LGA_ADMIN) view another LGA just by passing a
+    // different id in the URL.
+    const queryFilters: Prisma.MemberWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.senatorialDistrictId
+        ? { lga: { senatorialDistrictId: query.senatorialDistrictId } }
+        : {}),
       ...(query.lgaId ? { lgaId: query.lgaId } : {}),
       ...(query.wardId ? { wardId: query.wardId } : {}),
       ...(query.pollingUnitId ? { pollingUnitId: query.pollingUnitId } : {}),
@@ -108,6 +119,11 @@ export class MembersService {
             ],
           }
         : {}),
+    };
+
+    const filters: Prisma.MemberWhereInput = {
+      deletedAt: null,
+      AND: [scopeWhere, queryFilters],
     };
 
     const [items, total] = await Promise.all([
@@ -136,7 +152,7 @@ export class MembersService {
     });
     if (!member) throw new NotFoundException('Member not found.');
 
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: member.lgaId,
       wardId: member.wardId,
       pollingUnitId: member.pollingUnitId,
@@ -154,7 +170,7 @@ export class MembersService {
         where: { id: dto.pollingUnitId },
         select: { id: true, wardId: true, ward: { select: { lgaId: true } } },
       });
-      this.orgScope.assertCanAccessOrgUnit(actor, {
+      await this.orgScope.assertCanAccessOrgUnit(actor, {
         lgaId: pollingUnit.ward.lgaId,
         wardId: pollingUnit.wardId,
         pollingUnitId: pollingUnit.id,

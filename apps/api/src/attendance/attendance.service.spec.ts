@@ -7,6 +7,7 @@ const ACTOR: AuthenticatedUser = {
   id: 'officer-1',
   email: 'officer@example.com',
   role: Role.POLLING_UNIT_OFFICER,
+  senatorialDistrictId: null,
   lgaId: null,
   wardId: null,
   pollingUnitId: 'pu-1',

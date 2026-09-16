@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, MapPinned } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
+import { useAuth, UNRESTRICTED_ROLES } from '@/lib/auth-context';
+import { scopeBreadcrumb } from '@/components/layout/scope-indicator';
 import { Topbar } from '@/components/layout/topbar';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -37,6 +39,9 @@ const REASON_MESSAGES: Record<string, string> = {
 };
 
 export default function VerificationPage() {
+  const { user } = useAuth();
+  const isUnrestricted = user ? UNRESTRICTED_ROLES.includes(user.role) : false;
+  const breadcrumb = scopeBreadcrumb(user?.scopePath);
   const [mode, setMode] = useState<'scan' | 'manual'>('scan');
   const [membershipId, setMembershipId] = useState('');
   const [search, setSearch] = useState('');
@@ -75,6 +80,15 @@ export default function VerificationPage() {
           title="Member Verification"
           description="Scan a QR code or enter details to confirm membership."
         />
+
+        {!isUnrestricted && (
+          <div className="mb-4 flex items-center justify-center gap-2 rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-center text-sm text-brand-800">
+            <MapPinned className="h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+            <span>
+              Verifying within <span className="font-semibold">{breadcrumb.join(' / ') || 'your scope'}</span>
+            </span>
+          </div>
+        )}
 
         <TabSwitcher
           className="mb-4"
@@ -158,7 +172,7 @@ export default function VerificationPage() {
             <div className="mb-3 flex flex-col items-center text-center">
               <CheckCircle2 className="h-8 w-8 text-success-600" aria-hidden="true" />
               <p className="mt-1 font-heading text-lg font-semibold text-success-700">Verified Member</p>
-              <p className="text-xs text-success-600">PDP Gombe Central</p>
+              <p className="text-xs text-success-600">PDP Gombe State</p>
             </div>
             <div className="flex items-center gap-4">
               <Avatar

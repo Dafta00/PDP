@@ -5,7 +5,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useCampaignMe, useCurrentCampaign } from '@/lib/campaign-hooks';
 import { NAV_SECTIONS, canSeeNavItem } from './nav-config';
+import { ScopeLine } from './scope-indicator';
 import { cn } from '@/lib/utils';
 
 /**
@@ -29,6 +31,9 @@ function bestMatchHref(pathname: string | null, sections: typeof NAV_SECTIONS): 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { data: campaign } = useCurrentCampaign();
+  const { data: campaignMe } = useCampaignMe(campaign?.id);
+  const hasCampaignMembership = !!campaignMe?.membership;
   const activeHref = bestMatchHref(pathname, NAV_SECTIONS);
 
   return (
@@ -43,16 +48,22 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/30"
         />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">PDP GOMBE CENTRAL</p>
-          <p className="text-xs text-brand-200">Management Platform</p>
+          <p className="truncate text-sm font-semibold text-white">PDP GOMBE STATE</p>
+          {user ? (
+            <ScopeLine role={user.role} scopePath={user.scopePath} className="truncate text-xs text-brand-200" />
+          ) : (
+            <p className="text-xs text-brand-200">Management Platform</p>
+          )}
         </div>
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-        {NAV_SECTIONS.map((section) => {
-          const items = section.items.filter((item) => canSeeNavItem(item, user?.role));
+        {NAV_SECTIONS.map((section, sectionIndex) => {
+          const items = section.items.filter((item) =>
+            canSeeNavItem(item, user ?? undefined, hasCampaignMembership),
+          );
           if (items.length === 0) return null;
           return (
-            <div key={section.heading ?? 'root'}>
+            <div key={section.heading ?? `section-${sectionIndex}`}>
               {section.heading && (
                 <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
                   {section.heading}

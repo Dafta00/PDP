@@ -12,6 +12,10 @@ export class QueryMemberDto {
 
   @IsOptional()
   @IsString()
+  senatorialDistrictId?: string;
+
+  @IsOptional()
+  @IsString()
   lgaId?: string;
 
   @IsOptional()

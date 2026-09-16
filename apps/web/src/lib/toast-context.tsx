@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             className={`rounded-md px-4 py-2.5 text-sm font-medium shadow-lg ring-1 ${
               t.variant === 'success'
-                ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                ? 'bg-success-50 text-success-700 ring-success-200'
                 : t.variant === 'error'
                   ? 'bg-red-50 text-red-800 ring-red-200'
                   : 'bg-slate-800 text-white ring-slate-700'

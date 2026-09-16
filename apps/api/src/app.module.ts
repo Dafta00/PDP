@@ -8,6 +8,7 @@ import { AuditModule } from './audit/audit.module';
 import { QrModule } from './qr/qr.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { OrganizationModule } from './organization/organization.module';
 import { MembersModule } from './members/members.module';
 import { VerificationModule } from './verification/verification.module';
@@ -19,6 +20,7 @@ import { ResourcesModule } from './resources/resources.module';
 import { DistributionsModule } from './distributions/distributions.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ReportsModule } from './reports/reports.module';
+import { CampaignModule } from './campaign/campaign.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { ReportsModule } from './reports/reports.module';
     QrModule,
     AuthModule,
     UsersModule,
+    PermissionsModule,
     OrganizationModule,
     MembersModule,
     VerificationModule,
@@ -41,6 +44,7 @@ import { ReportsModule } from './reports/reports.module';
     DistributionsModule,
     DocumentsModule,
     ReportsModule,
+    CampaignModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

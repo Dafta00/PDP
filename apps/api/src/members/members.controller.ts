@@ -2,7 +2,9 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@ne
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { MembersService } from './members.service';
@@ -29,30 +31,34 @@ const CAN_CHANGE_STATUS = [
 ];
 
 @Controller('members')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
   @Post()
   @Roles(...CAN_MANAGE_MEMBERS)
+  @RequirePermissions('members.create')
   create(@Body() dto: CreateMemberDto, @CurrentUser() user: AuthenticatedUser) {
     return this.membersService.create(dto, user);
   }
 
   @Get()
   @Roles(...CAN_MANAGE_MEMBERS)
+  @RequirePermissions('members.view')
   findAll(@Query() query: QueryMemberDto, @CurrentUser() user: AuthenticatedUser) {
     return this.membersService.findAll(query, user);
   }
 
   @Get(':id')
   @Roles(...CAN_MANAGE_MEMBERS)
+  @RequirePermissions('members.view')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.membersService.findOne(id, user);
   }
 
   @Patch(':id')
   @Roles(...CAN_MANAGE_MEMBERS)
+  @RequirePermissions('members.update')
   update(
     @Param('id') id: string,
     @Body() dto: UpdateMemberDto,
@@ -63,6 +69,7 @@ export class MembersController {
 
   @Patch(':id/status')
   @Roles(...CAN_CHANGE_STATUS)
+  @RequirePermissions('members.deactivate')
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateMemberStatusDto,
@@ -73,6 +80,7 @@ export class MembersController {
 
   @Get(':id/qr-image')
   @Roles(...CAN_MANAGE_MEMBERS)
+  @RequirePermissions('members.view')
   async getQrImage(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     const qrImageDataUrl = await this.membersService.getQrImage(id, user);
     return { qrImageDataUrl };

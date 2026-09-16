@@ -40,6 +40,7 @@ export class ResourcesService {
         description: dto.description,
         totalQuantity: dto.initialQuantity,
         remainingQuantity: dto.initialQuantity,
+        campaignId: dto.campaignId,
         createdById: actor.id,
       },
     });
@@ -120,7 +121,7 @@ export class ResourcesService {
 
   async createAllocation(dto: CreateAllocationDto, actor: AuthenticatedUser, distributionId?: string) {
     const target = await this.resolveTarget(dto.targetLevel, dto.targetId);
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: target.targetLgaId,
       wardId: target.targetWardId,
       pollingUnitId: target.targetPollingUnitId,
@@ -198,7 +199,7 @@ export class ResourcesService {
     });
     if (!allocation) throw new NotFoundException('Allocation not found.');
 
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: allocation.targetLgaId,
       wardId: allocation.targetWardId,
       pollingUnitId: allocation.targetPollingUnitId,

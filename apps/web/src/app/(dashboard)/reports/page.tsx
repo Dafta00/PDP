@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
+import { Download, MapPinned } from 'lucide-react';
 import { api } from '@/lib/api-client';
+import { useAuth, UNRESTRICTED_ROLES } from '@/lib/auth-context';
+import { scopeBreadcrumb } from '@/components/layout/scope-indicator';
 import { exportToCsv } from '@/lib/csv-export';
 import {
   ActivityReport,
@@ -413,12 +415,24 @@ function DistributionsTab() {
 
 export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>('membership');
+  const { user } = useAuth();
+  const isUnrestricted = user ? UNRESTRICTED_ROLES.includes(user.role) : false;
+  const breadcrumb = scopeBreadcrumb(user?.scopePath);
 
   return (
     <>
       <Topbar title="Reports" />
       <div className="p-4 sm:p-6">
         <PageHeader title="Reports" description="Membership, activity, resource, and distribution analytics." />
+
+        {!isUnrestricted && (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">
+            <MapPinned className="h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+            <span>
+              Showing data for <span className="font-semibold">{breadcrumb.join(' / ') || 'your scope'}</span> only.
+            </span>
+          </div>
+        )}
 
         <TabSwitcher
           className="mb-6"

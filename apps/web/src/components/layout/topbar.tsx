@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 import { useMobileNav } from './mobile-nav-context';
+import { ScopeLine } from './scope-indicator';
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
@@ -21,7 +22,7 @@ export function Topbar({ title }: { title: string }) {
   const { setOpen } = useMobileNav();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b-2 border-brand-600/15 bg-white px-4 sm:px-6">
+    <header className="flex min-h-16 items-center justify-between gap-3 border-b-2 border-brand-600/15 bg-white px-4 py-2 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -31,9 +32,19 @@ export function Topbar({ title }: { title: string }) {
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
-        <h1 className="truncate font-heading text-base font-semibold text-slate-900 sm:text-lg">
-          {title}
-        </h1>
+        <div className="min-w-0">
+          <h1 className="truncate font-heading text-base font-semibold text-slate-900 sm:text-lg">
+            {title}
+          </h1>
+          {/* Scope stays visible on mobile even with the sidebar closed; the sidebar already shows it on desktop. */}
+          {user && (
+            <ScopeLine
+              role={user.role}
+              scopePath={user.scopePath}
+              className="truncate text-xs text-slate-500 md:hidden"
+            />
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-3 sm:gap-4">
         {user && (

@@ -46,7 +46,7 @@ export default function LoginPage() {
           />
           <div>
             <p className="font-heading text-sm font-semibold tracking-wide">PEOPLES DEMOCRATIC PARTY</p>
-            <p className="text-xs text-brand-200">Gombe Central Senatorial District</p>
+            <p className="text-xs text-brand-200">Gombe State</p>
           </div>
         </div>
 
@@ -54,7 +54,7 @@ export default function LoginPage() {
           <div className="overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/15">
             <Image
               src="/brand/candidate.jpg"
-              alt="PDP Gombe Central Gubernatorial Candidate"
+              alt="PDP Gombe State Gubernatorial Candidate"
               width={480}
               height={320}
               className="h-56 w-full object-cover object-top"
@@ -62,7 +62,7 @@ export default function LoginPage() {
             />
             <div className="px-4 py-3">
               <p className="text-sm font-semibold">Gubernatorial Candidate</p>
-              <p className="text-xs text-brand-200">PDP Gombe Central Senatorial District</p>
+              <p className="text-xs text-brand-200">Peoples Democratic Party — Gombe State</p>
             </div>
           </div>
           <div>
@@ -70,8 +70,8 @@ export default function LoginPage() {
               Membership &amp; Administrative Management Platform
             </h1>
             <p className="mt-2 text-sm text-brand-200">
-              A unified system for membership, organization, events, resources and reporting across the
-              district — from state to polling unit.
+              A unified system for membership, organization, events, resources and reporting across
+              Gombe State — from senatorial district to polling unit.
             </p>
           </div>
         </div>
@@ -90,7 +90,7 @@ export default function LoginPage() {
               height={48}
               className="mb-3 h-12 w-12 rounded-full object-cover ring-1 ring-slate-200"
             />
-            <p className="font-heading text-lg font-semibold text-slate-900">PDP GOMBE CENTRAL</p>
+            <p className="font-heading text-lg font-semibold text-slate-900">PDP GOMBE STATE</p>
             <p className="text-sm text-slate-500">Membership &amp; Administrative Management Platform</p>
           </div>
 

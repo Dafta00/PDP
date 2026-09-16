@@ -14,6 +14,15 @@ import {
   BarChart3,
   UserCog,
   History,
+  Megaphone,
+  UserSquare2,
+  Compass,
+  UsersRound,
+  HeartHandshake,
+  CalendarClock,
+  ListChecks,
+  PackageSearch,
+  Activity,
 } from 'lucide-react';
 import type { Role } from '@/lib/auth-context';
 
@@ -22,6 +31,8 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   roles?: Role[];
+  /** Visible only to a user with an active campaign membership — checked separately from `roles`, see canSeeNavItem. */
+  campaignOnly?: boolean;
 }
 
 export interface NavSection {
@@ -30,6 +41,10 @@ export interface NavSection {
 }
 
 const ADMIN_ROLES: Role[] = ['SUPER_ADMIN', 'STATE_ADMIN', 'SENATORIAL_ADMIN'];
+// Every role that can manage at least one lower role — POLLING_UNIT_OFFICER
+// is included here even though most of them can't create anyone yet; the
+// per-account `canCreateUsers` grant is checked separately in canSeeNavItem.
+const USER_MANAGEMENT_ROLES: Role[] = [...ADMIN_ROLES, 'LGA_ADMIN', 'WARD_ADMIN', 'POLLING_UNIT_OFFICER'];
 const FIELD_ROLES: Role[] = [
   'SUPER_ADMIN',
   'STATE_ADMIN',
@@ -79,14 +94,40 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     heading: 'Administration',
     items: [
-      { label: 'Users & Roles', href: '/users', icon: UserCog, roles: ADMIN_ROLES },
+      { label: 'Users & Roles', href: '/users', icon: UserCog, roles: USER_MANAGEMENT_ROLES },
       { label: 'Audit Logs', href: '/audit-logs', icon: History, roles: ADMIN_ROLES },
+    ],
+  },
+  {
+    heading: 'Campaign',
+    items: [
+      { label: 'Overview', href: '/campaign', icon: Megaphone, campaignOnly: true },
+      { label: 'Candidate', href: '/campaign/candidate', icon: UserSquare2, campaignOnly: true },
+      { label: 'Organization', href: '/campaign/organization', icon: Compass, campaignOnly: true },
+      { label: 'Teams', href: '/campaign/teams', icon: UsersRound, campaignOnly: true },
+      { label: 'Volunteers', href: '/campaign/volunteers', icon: HeartHandshake, campaignOnly: true },
+      { label: 'Events', href: '/campaign/events', icon: CalendarClock, campaignOnly: true },
+      { label: 'Tasks', href: '/campaign/tasks', icon: ListChecks, campaignOnly: true },
+      { label: 'Resources', href: '/campaign/resources', icon: PackageSearch, campaignOnly: true },
+      { label: 'Activity', href: '/campaign/activity', icon: Activity, campaignOnly: true },
+      { label: 'Access', href: '/campaign/access', icon: UserCog, campaignOnly: true },
+      { label: 'Reports', href: '/campaign/reports', icon: BarChart3, campaignOnly: true },
     ],
   },
 ];
 
-export function canSeeNavItem(item: NavItem, role: Role | undefined): boolean {
+export function canSeeNavItem(
+  item: NavItem,
+  user: { role: Role; canCreateUsers?: boolean } | undefined,
+  hasCampaignMembership = false,
+): boolean {
+  if (item.campaignOnly) return hasCampaignMembership;
   if (!item.roles) return true;
-  if (!role) return false;
-  return item.roles.includes(role);
+  if (!user) return false;
+  if (!item.roles.includes(user.role)) return false;
+  // A Polling Unit Officer only gets the Users & Roles link once a Super
+  // Admin has actually granted them user-creation rights — otherwise the
+  // page would be empty/useless for them.
+  if (item.href === '/users' && user.role === 'POLLING_UNIT_OFFICER') return !!user.canCreateUsers;
+  return true;
 }

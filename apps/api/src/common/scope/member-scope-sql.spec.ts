@@ -6,6 +6,12 @@ describe('memberScopeToSql', () => {
     expect(sql.sql).toBe('TRUE');
   });
 
+  it('scopes to LGAs within a senatorial district when present', () => {
+    const sql = memberScopeToSql({ lga: { senatorialDistrictId: 'district-1' } });
+    expect(sql.sql).toContain('"lgaId" IN (SELECT id FROM "LGA" WHERE "senatorialDistrictId" =');
+    expect(sql.values).toEqual(['district-1']);
+  });
+
   it('scopes to lgaId when present', () => {
     const sql = memberScopeToSql({ lgaId: 'lga-1' });
     expect(sql.sql).toContain('"lgaId" =');

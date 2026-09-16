@@ -17,7 +17,7 @@ export interface MemberListItem {
   status: MemberStatus;
   photoUrl: string | null;
   dateJoined: string;
-  lga: OrgUnit;
+  lga: OrgUnit & { senatorialDistrict?: OrgUnit };
   ward: OrgUnit;
   pollingUnit: OrgUnit;
 }

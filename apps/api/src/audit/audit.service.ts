@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthenticatedUser } from '../common/types/authenticated-user';
 
 export enum AuditAction {
   LOGIN_SUCCESS = 'LOGIN_SUCCESS',
@@ -11,6 +13,36 @@ export enum AuditAction {
   USER_UPDATED = 'USER_UPDATED',
   USER_ROLE_CHANGED = 'USER_ROLE_CHANGED',
   USER_STATUS_CHANGED = 'USER_STATUS_CHANGED',
+  USER_SCOPE_CHANGED = 'USER_SCOPE_CHANGED',
+  USER_MANAGEMENT_DENIED = 'USER_MANAGEMENT_DENIED',
+  PERMISSION_GRANTED = 'PERMISSION_GRANTED',
+  PERMISSION_REVOKED = 'PERMISSION_REVOKED',
+  ROLE_PERMISSIONS_UPDATED = 'ROLE_PERMISSIONS_UPDATED',
+
+  CAMPAIGN_CREATED = 'CAMPAIGN_CREATED',
+  CAMPAIGN_UPDATED = 'CAMPAIGN_UPDATED',
+  CAMPAIGN_USER_CREATED = 'CAMPAIGN_USER_CREATED',
+  CAMPAIGN_USER_UPDATED = 'CAMPAIGN_USER_UPDATED',
+  CAMPAIGN_ROLE_ASSIGNED = 'CAMPAIGN_ROLE_ASSIGNED',
+  CAMPAIGN_SCOPE_ASSIGNED = 'CAMPAIGN_SCOPE_ASSIGNED',
+  CAMPAIGN_MANAGEMENT_DENIED = 'CAMPAIGN_MANAGEMENT_DENIED',
+  CAMPAIGN_TEAM_CREATED = 'CAMPAIGN_TEAM_CREATED',
+  CAMPAIGN_TEAM_UPDATED = 'CAMPAIGN_TEAM_UPDATED',
+  CAMPAIGN_VOLUNTEER_CREATED = 'CAMPAIGN_VOLUNTEER_CREATED',
+  CAMPAIGN_VOLUNTEER_UPDATED = 'CAMPAIGN_VOLUNTEER_UPDATED',
+  CAMPAIGN_EVENT_CREATED = 'CAMPAIGN_EVENT_CREATED',
+  CAMPAIGN_EVENT_UPDATED = 'CAMPAIGN_EVENT_UPDATED',
+  CAMPAIGN_ATTENDANCE_RECORDED = 'CAMPAIGN_ATTENDANCE_RECORDED',
+  CAMPAIGN_ATTENDANCE_UPDATED = 'CAMPAIGN_ATTENDANCE_UPDATED',
+  CAMPAIGN_TASK_CREATED = 'CAMPAIGN_TASK_CREATED',
+  CAMPAIGN_TASK_ASSIGNED = 'CAMPAIGN_TASK_ASSIGNED',
+  CAMPAIGN_TASK_UPDATED = 'CAMPAIGN_TASK_UPDATED',
+  CAMPAIGN_TASK_COMPLETED = 'CAMPAIGN_TASK_COMPLETED',
+  CAMPAIGN_RESOURCE_ALLOCATED = 'CAMPAIGN_RESOURCE_ALLOCATED',
+  CAMPAIGN_ACTIVITY_RECORDED = 'CAMPAIGN_ACTIVITY_RECORDED',
+  CAMPAIGN_REPORT_GENERATED = 'CAMPAIGN_REPORT_GENERATED',
+  CAMPAIGN_PERMISSION_GRANTED = 'CAMPAIGN_PERMISSION_GRANTED',
+  CAMPAIGN_PERMISSION_REVOKED = 'CAMPAIGN_PERMISSION_REVOKED',
 
   ORG_UNIT_CREATED = 'ORG_UNIT_CREATED',
   ORG_UNIT_UPDATED = 'ORG_UNIT_UPDATED',
@@ -78,10 +110,15 @@ export class AuditService {
     });
   }
 
-  async list(params: { skip: number; take: number; action?: string; entityType?: string }) {
-    const where = {
+  async list(
+    params: { skip: number; take: number; action?: string; entityType?: string; entityId?: string },
+    viewer?: AuthenticatedUser,
+  ) {
+    const where: Prisma.AuditLogWhereInput = {
       ...(params.action ? { action: params.action } : {}),
       ...(params.entityType ? { entityType: params.entityType } : {}),
+      ...(params.entityId ? { entityId: params.entityId } : {}),
+      ...this.viewerScopeWhere(viewer),
     };
 
     const [items, total] = await Promise.all([
@@ -96,5 +133,34 @@ export class AuditService {
     ]);
 
     return { items, total };
+  }
+
+  /**
+   * Audit entries have no geography of their own (the entity they describe
+   * might be a Member, Event, User, etc., each shaped differently), so exact
+   * per-entity scoping isn't practical here. Instead, a SENATORIAL_ADMIN
+   * sees entries whose *actor* belongs to their own district — meaningfully
+   * closing the state-wide visibility gap without a bespoke join per entity
+   * type. SUPER_ADMIN/STATE_ADMIN remain unrestricted, matching every other
+   * "all audit logs" capability in the spec.
+   */
+  private viewerScopeWhere(viewer?: AuthenticatedUser): Prisma.AuditLogWhereInput {
+    if (!viewer || viewer.role === Role.SUPER_ADMIN || viewer.role === Role.STATE_ADMIN) return {};
+
+    if (viewer.role === Role.SENATORIAL_ADMIN && viewer.senatorialDistrictId) {
+      const districtId = viewer.senatorialDistrictId;
+      return {
+        actor: {
+          OR: [
+            { senatorialDistrictId: districtId },
+            { lga: { senatorialDistrictId: districtId } },
+            { ward: { lga: { senatorialDistrictId: districtId } } },
+            { pollingUnit: { ward: { lga: { senatorialDistrictId: districtId } } } },
+          ],
+        },
+      };
+    }
+
+    return { id: '__no_access__' };
   }
 }

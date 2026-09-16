@@ -6,6 +6,8 @@ import ms from '../common/utils/ms';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
+import { OrgScopeService } from '../common/scope/org-scope.service';
+import { AuthorizationService } from '../common/authorization/authorization.service';
 
 export interface TokenPair {
   accessToken: string;
@@ -22,6 +24,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
+    private readonly orgScope: OrgScopeService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   async login(email: string, password: string, meta?: { ip?: string }) {
@@ -42,6 +46,8 @@ export class AuthService {
 
     const tokens = await this.issueTokens(user.id);
 
+    await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
     await this.auditService.record({
       actorId: user.id,
       action: AuditAction.LOGIN_SUCCESS,
@@ -50,9 +56,19 @@ export class AuthService {
       metadata: { ip: meta?.ip },
     });
 
+    const additionalScopes = await this.prisma.userScope.findMany({
+      where: { userId: user.id },
+      select: { senatorialDistrictId: true, lgaId: true, wardId: true, pollingUnitId: true },
+    });
+    const authenticatedUser = this.toAuthenticatedUser(user, additionalScopes);
+    const [scopePath, permissions] = await Promise.all([
+      this.orgScope.resolveScopePath(authenticatedUser),
+      this.authorization.getEffectivePermissions(authenticatedUser),
+    ]);
+
     return {
       ...tokens,
-      user: this.toAuthenticatedUser(user),
+      user: { ...authenticatedUser, scopePath, permissions: Array.from(permissions).sort() },
     };
   }
 
@@ -143,19 +159,24 @@ export class AuthService {
     id: string;
     email: string;
     role: AuthenticatedUser['role'];
+    senatorialDistrictId: string | null;
     lgaId: string | null;
     wardId: string | null;
     pollingUnitId: string | null;
     fullName: string;
-  }) {
+    canCreateUsers: boolean;
+  }, additionalScopes: AuthenticatedUser['additionalScopes'] = []) {
     return {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      senatorialDistrictId: user.senatorialDistrictId,
       lgaId: user.lgaId,
       wardId: user.wardId,
       pollingUnitId: user.pollingUnitId,
+      canCreateUsers: user.canCreateUsers,
+      additionalScopes,
     };
   }
 }

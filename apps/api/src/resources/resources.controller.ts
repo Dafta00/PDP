@@ -10,7 +10,11 @@ import { CreateResourceDto, RestockResourceDto } from './dto/create-resource.dto
 import { CreateAllocationDto } from './dto/create-allocation.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
-const TOP_LEVEL_ADMINS = [Role.SUPER_ADMIN, Role.STATE_ADMIN, Role.SENATORIAL_ADMIN];
+// Creating a resource type and restocking its shared state-wide total pool
+// are state-level catalog actions — a senatorial admin allocates *from* that
+// pool to their district (CAN_ALLOCATE below), but doesn't manage the pool
+// itself, mirroring how LGAs are state-created fixed divisions.
+const TOP_LEVEL_ADMINS = [Role.SUPER_ADMIN, Role.STATE_ADMIN];
 
 const CAN_VIEW = [
   Role.SUPER_ADMIN,

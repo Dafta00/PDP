@@ -10,6 +10,7 @@ function makeUser(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
     id: 'actor-1',
     email: 'actor@example.com',
     role: Role.LGA_ADMIN,
+    senatorialDistrictId: null,
     lgaId: null,
     wardId: null,
     pollingUnitId: null,

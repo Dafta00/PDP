@@ -8,6 +8,9 @@ import { Prisma } from '@prisma/client';
  * carries no injection risk despite being raw SQL.
  */
 export function memberScopeToSql(scope: Prisma.MemberWhereInput): Prisma.Sql {
+  if ('lga' in scope && scope.lga && typeof scope.lga === 'object' && 'senatorialDistrictId' in scope.lga) {
+    return Prisma.sql`"lgaId" IN (SELECT id FROM "LGA" WHERE "senatorialDistrictId" = ${scope.lga.senatorialDistrictId})`;
+  }
   if ('lgaId' in scope && scope.lgaId) return Prisma.sql`"lgaId" = ${scope.lgaId}`;
   if ('wardId' in scope && scope.wardId) return Prisma.sql`"wardId" = ${scope.wardId}`;
   if ('pollingUnitId' in scope && scope.pollingUnitId) {

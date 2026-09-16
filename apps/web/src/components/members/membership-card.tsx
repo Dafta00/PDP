@@ -39,7 +39,7 @@ export function MembershipCard({
             <p className="truncate text-[11px] font-semibold tracking-wide text-white">
               PEOPLES DEMOCRATIC PARTY
             </p>
-            <p className="text-[10px] text-brand-100">Gombe Central — Membership Card</p>
+            <p className="text-[10px] text-brand-100">Gombe State — Membership Card</p>
           </div>
         </div>
       </div>

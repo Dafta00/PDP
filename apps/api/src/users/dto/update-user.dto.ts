@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { Role, UserStatus } from '@prisma/client';
 
 export class UpdateUserDto {
@@ -17,6 +17,10 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  senatorialDistrictId?: string;
+
+  @IsOptional()
+  @IsString()
   lgaId?: string;
 
   @IsOptional()
@@ -26,4 +30,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   pollingUnitId?: string;
+
+  /** SUPER_ADMIN-only; see CreateUserDto for the full rule. */
+  @IsOptional()
+  @IsBoolean()
+  canCreateUsers?: boolean;
 }

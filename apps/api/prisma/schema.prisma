@@ -39,14 +39,43 @@ model User {
   role         Role
   status       UserStatus @default(ACTIVE)
 
-  // Organizational scope — set according to role.
-  // LGA_ADMIN -> lgaId, WARD_ADMIN -> wardId, POLLING_UNIT_OFFICER -> pollingUnitId.
-  lgaId         String?
-  lga           LGA?         @relation(fields: [lgaId], references: [id])
-  wardId        String?
-  ward          Ward?        @relation(fields: [wardId], references: [id])
-  pollingUnitId String?
-  pollingUnit   PollingUnit? @relation(fields: [pollingUnitId], references: [id])
+  // Off by default: a POLLING_UNIT_OFFICER may not create any users at all
+  // until a SUPER_ADMIN explicitly flips this on for their account, and even
+  // then they may only create DATA_ENTRY_OFFICER accounts in their own unit
+  // (enforced in UsersService, not here). Meaningless for every other role.
+  canCreateUsers Boolean @default(false)
+
+  // Who created this account, and when they last successfully authenticated
+  // — displayed in the User Management UI, never used for authorization.
+  createdById  String?
+  createdBy    User?     @relation("UserCreatedBy", fields: [createdById], references: [id])
+  createdUsers User[]    @relation("UserCreatedBy")
+  lastLoginAt  DateTime?
+
+  // Per-user permission overrides layered on top of the role's default
+  // permission set (AuthorizationService.PERMISSIONS_BY_ROLE) — GRANT adds a
+  // permission the role doesn't have by default, REVOKE removes one it does.
+  // Additional geographic scopes beyond the single role-scope field above —
+  // SUPER_ADMIN-only, never self-service (see AuthorizationService).
+  permissionGrants   UserPermission[] @relation("UserPermissionOwner")
+  grantedPermissions UserPermission[] @relation("PermissionGrantedBy")
+  additionalScopes   UserScope[]      @relation("UserScopeOwner")
+  grantedScopes      UserScope[]      @relation("ScopeGrantedBy")
+
+  // Organizational scope — set according to role. Exactly one of these is
+  // meaningful per fixed-scope role (SENATORIAL_ADMIN -> senatorialDistrictId,
+  // LGA_ADMIN -> lgaId, WARD_ADMIN -> wardId, POLLING_UNIT_OFFICER ->
+  // pollingUnitId); DATA_ENTRY_OFFICER may have any one of them set as its
+  // configurable assignment level. SUPER_ADMIN/STATE_ADMIN leave all null
+  // (unrestricted, state-wide).
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
 
   refreshTokens                RefreshToken[]
   membersCreated               Member[]              @relation("MemberCreatedBy")
@@ -61,10 +90,21 @@ model User {
   distributionReceiptsReversed DistributionReceipt[] @relation("ReceiptReversedBy")
   documentsUploaded            Document[]            @relation("DocumentUploadedBy")
 
+  // Campaign Operations — this user's CAMPAIGN identity (memberships) is
+  // entirely separate from their administrative Role/scope above; see the
+  // schema header note before the Campaign models.
+  campaignMemberships        CampaignMembership[]           @relation("CampaignMembershipUser")
+  campaignMembershipsGranted CampaignMembership[]           @relation("CampaignMembershipCreatedBy")
+  campaignPermissionsGranted CampaignMembershipPermission[] @relation("CampaignPermissionGrantedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([role])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
 }
 
 model RefreshToken {
@@ -79,83 +119,229 @@ model RefreshToken {
   @@index([userId])
 }
 
+// A named permission string (e.g. "members.create") relative to the catalog
+// in AuthorizationService.PERMISSIONS — validated in application code, not
+// as a DB enum, so the catalog can grow without a migration (same tradeoff
+// already made for AuditLog.action).
+enum PermissionEffect {
+  GRANT
+  REVOKE
+}
+
+// Per-role default permission set — seeded from
+// AuthorizationService.DEFAULT_ROLE_PERMISSIONS but stored in the DB (not
+// hardcoded) so a SUPER_ADMIN can actually adjust what a role can do,
+// satisfying "SUPER_ADMIN can create/modify permissions". Every other actor
+// is read-only against this table.
+model RolePermission {
+  id         String @id @default(cuid())
+  role       Role
+  permission String
+
+  @@unique([role, permission])
+  @@index([role])
+}
+
+// Per-user overrides layered on top of RolePermission for that user's role.
+// A GRANT row adds a permission the role doesn't have by default; a REVOKE
+// row removes one it does. Only ever written by an actor who both possesses
+// the permission themselves and is authorized to delegate it — see
+// AuthorizationService.canGrantPermission.
+model UserPermission {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation("UserPermissionOwner", fields: [userId], references: [id], onDelete: Cascade)
+  permission  String
+  effect      PermissionEffect
+  grantedById String?
+  grantedBy   User?            @relation("PermissionGrantedBy", fields: [grantedById], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+// Additional geographic units (beyond the single primary scope field on
+// User) a user may operate in — e.g. an LGA_ADMIN covering two LGAs.
+// SUPER_ADMIN-only to create (AuthorizationService.canAssignScope):
+// a scoped admin granting themselves or anyone else an extra unit outside
+// their own authority would be exactly the escape hatch multi-scope must
+// not become.
+model UserScope {
+  id                   String              @id @default(cuid())
+  userId               String
+  user                 User                @relation("UserScopeOwner", fields: [userId], references: [id], onDelete: Cascade)
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+  createdById          String?
+  createdBy            User?               @relation("ScopeGrantedBy", fields: [createdById], references: [id])
+  createdAt            DateTime            @default(now())
+
+  @@unique([userId, senatorialDistrictId, lgaId, wardId, pollingUnitId])
+  @@index([userId])
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Organizational Hierarchy
 // State -> SenatorialDistrict -> LGA -> Ward -> PollingUnit
+//
+// `code` preserves the official INEC delimitation code where one exists
+// (e.g. a polling unit's "state/lga/ward/unit" code, "15/01/01/001") — it is
+// optional because not every level of the hierarchy has an official code
+// (senatorial districts aren't a coded INEC delimitation level) and because
+// units created ad hoc through the app (before official data is imported)
+// have none. `status` lets a unit be retired/merged without deleting it and
+// orphaning history (members, events, etc. that reference it).
 // ─────────────────────────────────────────────────────────────────────────
+
+enum OrgUnitStatus {
+  ACTIVE
+  INACTIVE
+}
 
 model State {
   id        String               @id @default(cuid())
   name      String               @unique
+  code      String?              @unique
+  status    OrgUnitStatus        @default(ACTIVE)
   districts SenatorialDistrict[]
+  campaigns Campaign[]
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 }
 
 model SenatorialDistrict {
-  id      String @id @default(cuid())
-  name    String
-  stateId String
-  state   State  @relation(fields: [stateId], references: [id])
-  lgas    LGA[]
+  id         String        @id @default(cuid())
+  name       String
+  code       String?
+  status     OrgUnitStatus @default(ACTIVE)
+  stateId    String
+  state      State         @relation(fields: [stateId], references: [id])
+  lgas       LGA[]
+  users      User[]
+  userScopes UserScope[]
+
+  campaignMemberships CampaignMembership[]
+  campaignTeams       CampaignTeam[]
+  campaignVolunteers  CampaignVolunteer[]
+  campaignEvents      CampaignEvent[]
+  campaignTasks       CampaignTask[]
+  campaignActivities  CampaignActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([stateId, name])
+  @@unique([stateId, code])
 }
 
 model LGA {
   id                   String               @id @default(cuid())
   name                 String
+  code                 String?
+  status               OrgUnitStatus        @default(ACTIVE)
   senatorialDistrictId String
   senatorialDistrict   SenatorialDistrict   @relation(fields: [senatorialDistrictId], references: [id])
   wards                Ward[]
   users                User[]
+  userScopes           UserScope[]
   members              Member[]
   events               Event[]
   resourceAllocations  ResourceAllocation[]
+
+  campaignMemberships CampaignMembership[]
+  campaignTeams       CampaignTeam[]
+  campaignVolunteers  CampaignVolunteer[]
+  campaignEvents      CampaignEvent[]
+  campaignTasks       CampaignTask[]
+  campaignActivities  CampaignActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([senatorialDistrictId, name])
+  @@unique([code])
 }
 
 model Ward {
-  id    String @id @default(cuid())
-  name  String
-  lgaId String
-  lga   LGA    @relation(fields: [lgaId], references: [id])
+  id     String        @id @default(cuid())
+  name   String
+  code   String?
+  status OrgUnitStatus @default(ACTIVE)
+  lgaId  String
+  lga    LGA           @relation(fields: [lgaId], references: [id])
 
   pollingUnits        PollingUnit[]
   users               User[]
+  userScopes          UserScope[]
   members             Member[]
   events              Event[]
   resourceAllocations ResourceAllocation[]
+
+  campaignMemberships CampaignMembership[]
+  campaignTeams       CampaignTeam[]
+  campaignVolunteers  CampaignVolunteer[]
+  campaignEvents      CampaignEvent[]
+  campaignTasks       CampaignTask[]
+  campaignActivities  CampaignActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([lgaId, name])
+  @@unique([code])
 }
 
 model PollingUnit {
-  id     String  @id @default(cuid())
+  id     String        @id @default(cuid())
   name   String
   code   String?
+  status OrgUnitStatus @default(ACTIVE)
   wardId String
-  ward   Ward    @relation(fields: [wardId], references: [id])
+  ward   Ward          @relation(fields: [wardId], references: [id])
+
+  // Provenance for imported records — see prisma/data/inec/SOURCE.md. Null
+  // for units created ad hoc through the app rather than an authoritative
+  // import. Coordinates are schema-ready but unpopulated: the current INEC
+  // source carries no coordinate data at all (0 of 2,984 records), so these
+  // stay null rather than being estimated or guessed.
+  source        String?
+  sourceVersion String?
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  latitude      Float?
+  longitude     Float?
 
   users               User[]
+  userScopes          UserScope[]
   members             Member[]
   events              Event[]
   resourceAllocations ResourceAllocation[]
 
+  campaignMemberships CampaignMembership[]
+  campaignTeams       CampaignTeam[]
+  campaignVolunteers  CampaignVolunteer[]
+  campaignEvents      CampaignEvent[]
+  campaignTasks       CampaignTask[]
+  campaignActivities  CampaignActivity[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([wardId, name])
+  // Not @@unique([wardId, name]): INEC's own official register legitimately
+  // has multiple distinct polling units sharing an identical name within
+  // one ward (same building, different unit numbers) — confirmed present
+  // in the Gombe dataset. `code` (the official delimitation code) is the
+  // real uniqueness guarantee; it's nullable only for units created ad hoc
+  // through the app before official data exists for that area.
+  @@unique([code])
+  @@index([wardId])
 }
 
 // Atomic per-key sequence generator (e.g. "member-2026") backing human-readable
@@ -210,6 +396,12 @@ model Member {
   attendances          Attendance[]
   distributionReceipts DistributionReceipt[]
 
+  // A member may (optionally) also be a campaign volunteer/attendee — the
+  // link is explicit and never assumed; see the Campaign Operations schema
+  // header note.
+  campaignVolunteerRecords CampaignVolunteer[]  @relation("CampaignVolunteerMember")
+  campaignAttendances      CampaignAttendance[] @relation("CampaignAttendanceMember")
+
   createdById String?
   createdBy   User?   @relation("MemberCreatedBy", fields: [createdById], references: [id])
 
@@ -223,6 +415,7 @@ model Member {
   @@index([status])
   @@index([surname, firstName])
   @@index([phone])
+  @@index([email])
 }
 
 enum QRCodeStatus {
@@ -356,8 +549,17 @@ model Resource {
   allocations   ResourceAllocation[]
   distributions Distribution[]
 
+  // Tags this resource (and every allocation drawn from it, via the
+  // existing ResourceAllocation/ResourceTransaction audit trail) as
+  // belonging to a campaign — no separate CampaignResource/Allocation
+  // model, per the "don't duplicate the resource system" principle.
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
 }
 
 model ResourceAllocation {
@@ -534,4 +736,484 @@ model Document {
 
   @@index([category])
   @@index([restrictedToAdmins])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Campaign Operations
+//
+// A separate operational + authorization domain layered on top of the SAME
+// geography (State -> SenatorialDistrict -> LGA -> Ward -> PollingUnit) and
+// the SAME audit log — never a second copy of either. A user's CAMPAIGN role
+// and scope (CampaignMembership) are entirely independent of their
+// ADMINISTRATIVE Role/scope on User itself: holding WARD_ADMIN grants
+// nothing here, and holding DISTRICT_COORDINATOR grants nothing there. See
+// CampaignAuthorizationService, which mirrors AuthorizationService's
+// hierarchy/scope-containment pattern for this separate domain rather than
+// reusing its tables (the two role enums are not interchangeable).
+//
+// This is an operational management system: it records who did what, where,
+// and when (events held, teams staffed, tasks completed, resources moved),
+// and grants no facility anywhere for inferring, scoring, or predicting an
+// individual's political preference.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum CampaignStatus {
+  PLANNED
+  ACTIVE
+  SUSPENDED
+  CONCLUDED
+}
+
+// One row per election campaign — deliberately not hardcoded to Pantami
+// 2027 in code; the initial row is seeded data, and everything candidate-
+// facing (name, title, bio, photo) reads from here.
+model Campaign {
+  id                String         @id @default(cuid())
+  name              String
+  candidateName     String
+  candidateTitle    String?
+  candidateBio      String?
+  candidatePhotoUrl String?
+  party             String
+  electionType      String
+  electionYear      Int
+  status            CampaignStatus @default(PLANNED)
+  startDate         DateTime?
+  endDate           DateTime?
+
+  stateId String
+  state   State  @relation(fields: [stateId], references: [id])
+
+  memberships CampaignMembership[]
+  teams       CampaignTeam[]
+  volunteers  CampaignVolunteer[]
+  events      CampaignEvent[]
+  tasks       CampaignTask[]
+  activities  CampaignActivity[]
+  resources   Resource[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Authority ordering mirrors the administrative Role hierarchy in shape
+// (six geographic-coordinator levels), plus five fixed-rank functional
+// specialist roles that sit at the bottom — narrow-purpose assignments,
+// not geographic authority, and (like DATA_ENTRY_OFFICER) never able to
+// manage another campaign user. See CampaignAuthorizationService.ROLE_HIERARCHY.
+enum CampaignRole {
+  CAMPAIGN_SUPER_ADMIN
+  STATE_CAMPAIGN_COORDINATOR
+  DISTRICT_COORDINATOR
+  LGA_COORDINATOR
+  WARD_COORDINATOR
+  POLLING_UNIT_COORDINATOR
+  CAMPAIGN_DATA_OFFICER
+  EVENT_COORDINATOR
+  LOGISTICS_OFFICER
+  VOLUNTEER_COORDINATOR
+  REPORT_VIEWER
+}
+
+enum CampaignMembershipStatus {
+  ACTIVE
+  DISABLED
+}
+
+// A user's CAMPAIGN identity. Separate from User.role/scope by design (see
+// header note above) — a user may hold at most one membership per campaign,
+// with its own role and its own geography, exactly one level of which is
+// ever meaningful per fixed-scope role (same "exactly one field" pattern as
+// User's own administrative scope fields).
+model CampaignMembership {
+  id         String                   @id @default(cuid())
+  campaignId String
+  campaign   Campaign                 @relation(fields: [campaignId], references: [id])
+  userId     String
+  user       User                     @relation("CampaignMembershipUser", fields: [userId], references: [id])
+  role       CampaignRole
+  status     CampaignMembershipStatus @default(ACTIVE)
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  createdById String?
+  createdBy   User?   @relation("CampaignMembershipCreatedBy", fields: [createdById], references: [id])
+
+  permissionGrants      CampaignMembershipPermission[]
+  teamsCoordinated      CampaignTeam[]                 @relation("CampaignTeamCoordinator")
+  volunteersCoordinated CampaignVolunteer[]            @relation("CampaignVolunteerCoordinator")
+  eventsOrganized       CampaignEvent[]                @relation("CampaignEventOrganizer")
+  tasksAssigned         CampaignTask[]                 @relation("CampaignTaskAssignee")
+  tasksCreated          CampaignTask[]                 @relation("CampaignTaskCreatedBy")
+  tasksCompleted        CampaignTask[]                 @relation("CampaignTaskCompletedBy")
+  activitiesLogged      CampaignActivity[]             @relation("CampaignActivityResponsible")
+  teamMemberships       CampaignTeamMember[]
+  attendancesRecorded   CampaignAttendance[]           @relation("CampaignAttendanceRecordedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, userId])
+  @@index([campaignId, role])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+}
+
+// DB-backed campaign role defaults, mirroring RolePermission — same
+// "permission string" catalog as the rest of the app (namespaced
+// `campaign.*`), CAMPAIGN_SUPER_ADMIN-editable, code fallback when unseeded.
+model CampaignRolePermission {
+  id         String       @id @default(cuid())
+  role       CampaignRole
+  permission String
+
+  @@unique([role, permission])
+  @@index([role])
+}
+
+// Per-membership permission overrides, mirroring UserPermission.
+model CampaignMembershipPermission {
+  id           String             @id @default(cuid())
+  membershipId String
+  membership   CampaignMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission   String
+  effect       PermissionEffect
+  grantedById  String?
+  grantedBy    User?              @relation("CampaignPermissionGrantedBy", fields: [grantedById], references: [id])
+  createdAt    DateTime           @default(now())
+
+  @@unique([membershipId, permission])
+  @@index([membershipId])
+}
+
+enum CampaignTeamStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model CampaignTeam {
+  id         String             @id @default(cuid())
+  campaignId String
+  campaign   Campaign           @relation(fields: [campaignId], references: [id])
+  name       String
+  teamType   String?
+  status     CampaignTeamStatus @default(ACTIVE)
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  coordinatorId String?
+  coordinator   CampaignMembership? @relation("CampaignTeamCoordinator", fields: [coordinatorId], references: [id])
+
+  members    CampaignTeamMember[]
+  tasks      CampaignTask[]
+  activities CampaignActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+}
+
+// A team member is either a campaign-authorized user (has a
+// CampaignMembership) or a volunteer — exactly one of the two fields below
+// is set, enforced in CampaignTeamsService.
+model CampaignTeamMember {
+  id     String       @id @default(cuid())
+  teamId String
+  team   CampaignTeam @relation(fields: [teamId], references: [id])
+
+  membershipId String?
+  membership   CampaignMembership? @relation(fields: [membershipId], references: [id])
+  volunteerId  String?
+  volunteer    CampaignVolunteer?  @relation(fields: [volunteerId], references: [id])
+
+  roleInTeam String?
+  joinedAt   DateTime @default(now())
+
+  @@index([teamId])
+}
+
+enum CampaignVolunteerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Deliberately its own model, not a flag on Member — party membership and
+// campaign volunteering are different facts about a person (see schema
+// header + spec section 25); `memberId` links the two only when a
+// volunteer genuinely is also a registered member.
+model CampaignVolunteer {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  memberId String?
+  member   Member? @relation("CampaignVolunteerMember", fields: [memberId], references: [id])
+
+  fullName     String
+  phone        String?
+  role         String?
+  status       CampaignVolunteerStatus @default(ACTIVE)
+  availability String?
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  coordinatorId String?
+  coordinator   CampaignMembership? @relation("CampaignVolunteerCoordinator", fields: [coordinatorId], references: [id])
+
+  teamMemberships CampaignTeamMember[]
+  attendances     CampaignAttendance[] @relation("CampaignAttendanceVolunteer")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+  @@index([memberId])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+}
+
+enum CampaignEventType {
+  RALLY
+  TOWN_HALL
+  WARD_MEETING
+  LGA_MEETING
+  DISTRICT_MEETING
+  STAKEHOLDER_MEETING
+  VOLUNTEER_TRAINING
+  COMMUNITY_OUTREACH
+  INTERNAL_PARTY_MEETING
+}
+
+enum CampaignEventStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}
+
+model CampaignEvent {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  title       String
+  type        CampaignEventType
+  description String?
+  date        DateTime
+  startTime   DateTime?
+  endTime     DateTime?
+  venue       String?
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  organizerId String
+  organizer   CampaignMembership @relation("CampaignEventOrganizer", fields: [organizerId], references: [id])
+
+  expectedAttendance Int?
+  actualAttendance   Int?
+  status             CampaignEventStatus @default(SCHEDULED)
+  attachmentUrls     String[]
+
+  attendances CampaignAttendance[]
+  tasks       CampaignTask[]
+  activities  CampaignActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, status])
+  @@index([date])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+}
+
+enum CampaignAttendeeType {
+  MEMBER
+  VOLUNTEER
+  GUEST
+}
+
+enum CampaignAttendanceStatus {
+  CHECKED_IN
+  CHECKED_OUT
+  NO_SHOW
+}
+
+// Deliberately separate from the party's own Attendance model — an event
+// attendee is not assumed to be a supporter, a volunteer, or a member (see
+// schema header + spec section 25); this only ever records presence at an
+// operational event, never a preference.
+model CampaignAttendance {
+  id      String        @id @default(cuid())
+  eventId String
+  event   CampaignEvent @relation(fields: [eventId], references: [id])
+
+  attendeeType CampaignAttendeeType
+  memberId     String?
+  member       Member?              @relation("CampaignAttendanceMember", fields: [memberId], references: [id])
+  volunteerId  String?
+  volunteer    CampaignVolunteer?   @relation("CampaignAttendanceVolunteer", fields: [volunteerId], references: [id])
+  guestName    String?
+
+  checkInAt          DateTime                 @default(now())
+  checkOutAt         DateTime?
+  status             CampaignAttendanceStatus @default(CHECKED_IN)
+  verificationMethod VerificationMethod
+
+  recordedById String
+  recordedBy   CampaignMembership @relation("CampaignAttendanceRecordedBy", fields: [recordedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, memberId])
+  @@unique([eventId, volunteerId])
+  @@index([eventId])
+}
+
+enum CampaignTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum CampaignTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model CampaignTask {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  title       String
+  description String?
+
+  assignedToMembershipId String?
+  assignedToMembership   CampaignMembership? @relation("CampaignTaskAssignee", fields: [assignedToMembershipId], references: [id])
+  assignedToTeamId       String?
+  assignedToTeam         CampaignTeam?       @relation(fields: [assignedToTeamId], references: [id])
+  eventId                String?
+  event                  CampaignEvent?      @relation(fields: [eventId], references: [id])
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  priority CampaignTaskPriority @default(MEDIUM)
+  dueDate  DateTime?
+  status   CampaignTaskStatus   @default(PENDING)
+
+  createdById   String
+  createdBy     CampaignMembership  @relation("CampaignTaskCreatedBy", fields: [createdById], references: [id])
+  completedById String?
+  completedBy   CampaignMembership? @relation("CampaignTaskCompletedBy", fields: [completedById], references: [id])
+  completedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, status])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
+}
+
+enum CampaignActivityType {
+  MEETING_HELD
+  EVENT_COMPLETED
+  TEAM_CREATED
+  VOLUNTEER_ASSIGNED
+  RESOURCE_ALLOCATED
+  TASK_COMPLETED
+  GENERAL
+}
+
+// A curated operational narrative ("what happened, where, and who was
+// responsible") — distinct from AuditLog, which is the security/audit
+// trail for every mutation across the whole app (including this module;
+// see CampaignAuthorizationService) and is not meant to be read as a
+// coordinator-facing activity feed.
+model CampaignActivity {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  type        CampaignActivityType
+  description String
+  date        DateTime             @default(now())
+
+  senatorialDistrictId String?
+  senatorialDistrict   SenatorialDistrict? @relation(fields: [senatorialDistrictId], references: [id])
+  lgaId                String?
+  lga                  LGA?                @relation(fields: [lgaId], references: [id])
+  wardId               String?
+  ward                 Ward?               @relation(fields: [wardId], references: [id])
+  pollingUnitId        String?
+  pollingUnit          PollingUnit?        @relation(fields: [pollingUnitId], references: [id])
+
+  responsibleId String?
+  responsible   CampaignMembership? @relation("CampaignActivityResponsible", fields: [responsibleId], references: [id])
+  teamId        String?
+  team          CampaignTeam?       @relation(fields: [teamId], references: [id])
+  eventId       String?
+  event         CampaignEvent?      @relation(fields: [eventId], references: [id])
+
+  attachmentUrls String[]
+
+  createdAt DateTime @default(now())
+
+  @@index([campaignId, type])
+  @@index([senatorialDistrictId])
+  @@index([lgaId])
+  @@index([wardId])
+  @@index([pollingUnitId])
 }

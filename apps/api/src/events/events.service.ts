@@ -8,7 +8,10 @@ import { CreateEventDto, EventTargetLevel } from './dto/create-event.dto';
 import { UpdateEventDto, UpdateEventStatusDto } from './dto/update-event.dto';
 import { QueryEventDto } from './dto/query-event.dto';
 
-const TOP_LEVEL_ADMINS: Role[] = [Role.SUPER_ADMIN, Role.STATE_ADMIN, Role.SENATORIAL_ADMIN];
+// SENATORIAL_ADMIN is intentionally excluded — they can target any LGA
+// within their own district (checked via assertCanAccessOrgUnit), but
+// creating a truly state-wide event (no LGA at all) is state-level-only.
+const TOP_LEVEL_ADMINS: Role[] = [Role.SUPER_ADMIN, Role.STATE_ADMIN];
 
 interface ResolvedTarget {
   targetLgaId: string | null;
@@ -72,13 +75,13 @@ export class EventsService {
     }
   }
 
-  private assertCanTarget(actor: AuthenticatedUser, target: ResolvedTarget) {
+  private async assertCanTarget(actor: AuthenticatedUser, target: ResolvedTarget) {
     if (TOP_LEVEL_ADMINS.includes(actor.role)) return;
 
     if (!target.targetLgaId) {
-      throw new ForbiddenException('Only district-level administrators can create district-wide events.');
+      throw new ForbiddenException('Only state-level administrators can create state-wide events.');
     }
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: target.targetLgaId,
       wardId: target.targetWardId,
       pollingUnitId: target.targetPollingUnitId,
@@ -91,7 +94,7 @@ export class EventsService {
     }
 
     const target = await this.resolveTarget(dto.targetLevel, dto.targetId);
-    this.assertCanTarget(actor, target);
+    await this.assertCanTarget(actor, target);
 
     const event = await this.prisma.event.create({
       data: {
@@ -154,9 +157,9 @@ export class EventsService {
     let target: ResolvedTarget | undefined;
     if (dto.targetLevel) {
       target = await this.resolveTarget(dto.targetLevel, dto.targetId);
-      this.assertCanTarget(actor, target);
+      await this.assertCanTarget(actor, target);
     } else if (!TOP_LEVEL_ADMINS.includes(actor.role)) {
-      this.assertCanTarget(actor, {
+      await this.assertCanTarget(actor, {
         targetLgaId: existing.targetLgaId,
         targetWardId: existing.targetWardId,
         targetPollingUnitId: existing.targetPollingUnitId,
@@ -193,7 +196,7 @@ export class EventsService {
   async updateStatus(id: string, dto: UpdateEventStatusDto, actor: AuthenticatedUser) {
     const existing = await this.findOne(id, actor);
     if (!TOP_LEVEL_ADMINS.includes(actor.role)) {
-      this.assertCanTarget(actor, {
+      await this.assertCanTarget(actor, {
         targetLgaId: existing.targetLgaId,
         targetWardId: existing.targetWardId,
         targetPollingUnitId: existing.targetPollingUnitId,

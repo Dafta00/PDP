@@ -6,7 +6,8 @@ jest.mock('bcryptjs');
 
 function makeDeps() {
   const prisma = {
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn() },
+    userScope: { findMany: jest.fn().mockResolvedValue([]) },
     refreshToken: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   };
   const jwtService = {
@@ -14,7 +15,9 @@ function makeDeps() {
     verifyAsync: jest.fn(),
   };
   const auditService = { record: jest.fn() };
-  return { prisma, jwtService, auditService };
+  const orgScope = { resolveScopePath: jest.fn().mockResolvedValue({}) };
+  const authorization = { getEffectivePermissions: jest.fn().mockResolvedValue(new Set(['dashboard.view'])) };
+  return { prisma, jwtService, auditService, orgScope, authorization };
 }
 
 const ACTIVE_USER = {
@@ -24,6 +27,7 @@ const ACTIVE_USER = {
   fullName: 'Admin',
   role: 'SUPER_ADMIN',
   status: 'ACTIVE',
+  senatorialDistrictId: null,
   lgaId: null,
   wardId: null,
   pollingUnitId: null,
@@ -33,9 +37,15 @@ describe('AuthService.login', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('rejects an unknown email without revealing whether the account exists', async () => {
-    const { prisma, jwtService, auditService } = makeDeps();
+    const { prisma, jwtService, auditService, orgScope, authorization } = makeDeps();
     prisma.user.findUnique.mockResolvedValue(null);
-    const service = new AuthService(prisma as any, jwtService as any, auditService as any);
+    const service = new AuthService(
+      prisma as any,
+      jwtService as any,
+      auditService as any,
+      orgScope as any,
+      authorization as any,
+    );
 
     await expect(service.login('nobody@example.com', 'whatever')).rejects.toThrow(UnauthorizedException);
     expect(auditService.record).toHaveBeenCalledWith(
@@ -44,28 +54,46 @@ describe('AuthService.login', () => {
   });
 
   it('rejects a wrong password', async () => {
-    const { prisma, jwtService, auditService } = makeDeps();
+    const { prisma, jwtService, auditService, orgScope, authorization } = makeDeps();
     prisma.user.findUnique.mockResolvedValue(ACTIVE_USER);
     (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-    const service = new AuthService(prisma as any, jwtService as any, auditService as any);
+    const service = new AuthService(
+      prisma as any,
+      jwtService as any,
+      auditService as any,
+      orgScope as any,
+      authorization as any,
+    );
 
     await expect(service.login(ACTIVE_USER.email, 'wrong')).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects a disabled account even with the correct password', async () => {
-    const { prisma, jwtService, auditService } = makeDeps();
+    const { prisma, jwtService, auditService, orgScope, authorization } = makeDeps();
     prisma.user.findUnique.mockResolvedValue({ ...ACTIVE_USER, status: 'DISABLED' });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    const service = new AuthService(prisma as any, jwtService as any, auditService as any);
+    const service = new AuthService(
+      prisma as any,
+      jwtService as any,
+      auditService as any,
+      orgScope as any,
+      authorization as any,
+    );
 
     await expect(service.login(ACTIVE_USER.email, 'correct')).rejects.toThrow(UnauthorizedException);
   });
 
   it('issues a token pair and logs LOGIN_SUCCESS on valid credentials', async () => {
-    const { prisma, jwtService, auditService } = makeDeps();
+    const { prisma, jwtService, auditService, orgScope, authorization } = makeDeps();
     prisma.user.findUnique.mockResolvedValue(ACTIVE_USER);
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    const service = new AuthService(prisma as any, jwtService as any, auditService as any);
+    const service = new AuthService(
+      prisma as any,
+      jwtService as any,
+      auditService as any,
+      orgScope as any,
+      authorization as any,
+    );
 
     const result = await service.login(ACTIVE_USER.email, 'correct');
 

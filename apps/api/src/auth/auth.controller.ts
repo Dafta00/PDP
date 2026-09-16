@@ -7,10 +7,16 @@ import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
+import { OrgScopeService } from '../common/scope/org-scope.service';
+import { AuthorizationService } from '../common/authorization/authorization.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly orgScope: OrgScopeService,
+    private readonly authorization: AuthorizationService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -36,6 +42,10 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: AuthenticatedUser) {
-    return user;
+    const [scopePath, permissions] = await Promise.all([
+      this.orgScope.resolveScopePath(user),
+      this.authorization.getEffectivePermissions(user),
+    ]);
+    return { ...user, scopePath, permissions: Array.from(permissions).sort() };
   }
 }

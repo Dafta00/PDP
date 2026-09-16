@@ -160,7 +160,7 @@ export default function RegisterMemberPage() {
     <>
       <Topbar title="Register Member" />
       <div className="p-4 sm:p-6">
-        <PageHeader title="Register Member" description="Add a new member to the Gombe Central register." />
+        <PageHeader title="Register Member" description="Add a new member to the Gombe State register." />
 
         <form onSubmit={onSubmit} className="max-w-3xl space-y-6">
           <SectionCard step="01" title="Personal Information">

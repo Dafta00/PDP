@@ -13,21 +13,48 @@ export type Role =
   | 'POLLING_UNIT_OFFICER'
   | 'DATA_ENTRY_OFFICER';
 
+export interface ScopeUnit {
+  id: string;
+  name: string;
+}
+
+export interface ScopePath {
+  senatorialDistrict?: ScopeUnit;
+  lga?: ScopeUnit;
+  ward?: ScopeUnit;
+  pollingUnit?: ScopeUnit;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
   fullName?: string;
   role: Role;
+  senatorialDistrictId: string | null;
   lgaId: string | null;
   wardId: string | null;
   pollingUnitId: string | null;
+  /** POLLING_UNIT_OFFICER-only: SUPER_ADMIN-granted permission to create Data Entry Officer accounts. */
+  canCreateUsers?: boolean;
+  scopePath?: ScopePath;
+  /**
+   * This user's effective permission set (role defaults + personal
+   * overrides), resolved server-side at login/refresh. UI-only — every
+   * protected action is still independently re-checked by the API, which
+   * is the actual security boundary; this just drives what the interface
+   * shows (e.g. hiding an action nobody could complete anyway).
+   */
+  permissions?: string[];
 }
+
+export const UNRESTRICTED_ROLES: Role[] = ['SUPER_ADMIN', 'STATE_ADMIN'];
 
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  hasPermission: (permission: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -84,8 +111,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }, [router]);
 
+  const hasPermission = useCallback(
+    (permission: string) => user?.permissions?.includes(permission) ?? false,
+    [user],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

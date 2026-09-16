@@ -10,8 +10,15 @@ import { CreateDistributionDto, UpdateDistributionStatusDto } from './dto/create
 import { CreateDistributionAllocationDto } from './dto/create-distribution-allocation.dto';
 import { ConfirmReceiptDto } from './dto/confirm-receipt.dto';
 
-const UNRESTRICTED_ROLES: Role[] = [Role.SUPER_ADMIN, Role.STATE_ADMIN, Role.SENATORIAL_ADMIN];
-const CAN_REVERSE_ROLES: Role[] = [...UNRESTRICTED_ROLES, Role.LGA_ADMIN, Role.WARD_ADMIN];
+// Permitted to *attempt* a reversal — actual scope (which district/LGA/ward
+// they may reverse within) is enforced afterward by assertCanAccessOrgUnit.
+const CAN_REVERSE_ROLES: Role[] = [
+  Role.SUPER_ADMIN,
+  Role.STATE_ADMIN,
+  Role.SENATORIAL_ADMIN,
+  Role.LGA_ADMIN,
+  Role.WARD_ADMIN,
+];
 
 const DISTRIBUTION_INCLUDE = {
   resource: { select: { id: true, name: true, unit: true } },
@@ -292,7 +299,7 @@ export class DistributionsService {
       throw new BadRequestException('This receipt has already been reversed.');
     }
 
-    this.orgScope.assertCanAccessOrgUnit(actor, {
+    await this.orgScope.assertCanAccessOrgUnit(actor, {
       lgaId: receipt.allocation.targetLgaId,
       wardId: receipt.allocation.targetWardId,
       pollingUnitId: receipt.allocation.targetPollingUnitId,

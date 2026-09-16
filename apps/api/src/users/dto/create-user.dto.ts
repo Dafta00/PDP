@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { Role } from '@prisma/client';
 
 export class CreateUserDto {
@@ -18,6 +18,10 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
+  senatorialDistrictId?: string;
+
+  @IsOptional()
+  @IsString()
   lgaId?: string;
 
   @IsOptional()
@@ -27,4 +31,13 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   pollingUnitId?: string;
+
+  /**
+   * Grants a POLLING_UNIT_OFFICER permission to create DATA_ENTRY_OFFICER
+   * accounts. Only honored when the actor is SUPER_ADMIN and `role` is
+   * POLLING_UNIT_OFFICER — silently ignored otherwise (see UsersService).
+   */
+  @IsOptional()
+  @IsBoolean()
+  canCreateUsers?: boolean;
 }

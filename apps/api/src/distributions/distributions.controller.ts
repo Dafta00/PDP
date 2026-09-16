@@ -10,7 +10,10 @@ import { CreateDistributionDto, UpdateDistributionStatusDto } from './dto/create
 import { CreateDistributionAllocationDto } from './dto/create-distribution-allocation.dto';
 import { ConfirmReceiptDto } from './dto/confirm-receipt.dto';
 
-const TOP_LEVEL_ADMINS = [Role.SUPER_ADMIN, Role.STATE_ADMIN, Role.SENATORIAL_ADMIN];
+// Creating/closing a distribution campaign is state-level (it draws from the
+// shared state-wide resource pool); a senatorial admin allocates and
+// confirms receipts within a campaign for their own district only.
+const TOP_LEVEL_ADMINS = [Role.SUPER_ADMIN, Role.STATE_ADMIN];
 
 const CAN_VIEW = [
   Role.SUPER_ADMIN,

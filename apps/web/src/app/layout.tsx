@@ -20,8 +20,8 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: 'PDP Gombe Central Management Platform',
-  description: 'Membership & administrative management platform for PDP Gombe Central.',
+  title: 'PDP Gombe State Management Platform',
+  description: 'Membership & administrative management platform for PDP Gombe State.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

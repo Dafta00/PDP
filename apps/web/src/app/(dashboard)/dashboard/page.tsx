@@ -2,14 +2,22 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Users, UserCheck, Clock, CalendarDays, UserPlus, ShieldCheck, CalendarPlus } from 'lucide-react';
+import { Users, UserCheck, Clock, CalendarDays, UserPlus, ShieldCheck, CalendarPlus, MapPinned } from 'lucide-react';
 import { api } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, UNRESTRICTED_ROLES } from '@/lib/auth-context';
 import { humanizeAction, SESSION_ACTIONS } from '@/lib/audit-labels';
 import { Topbar } from '@/components/layout/topbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { LoadingState, ErrorState } from '@/components/ui/states';
+import { OrgUnit } from '@/lib/types';
+
+interface DistrictBreakdown {
+  id: string;
+  name: string;
+  lgaCount: number;
+  totalMembers: number;
+}
 
 interface DashboardStats {
   totalMembers: number;
@@ -20,6 +28,7 @@ interface DashboardStats {
   pollingUnits: number;
   upcomingEvents: number;
   registrationTrend: { month: string; count: number }[];
+  districtBreakdown: DistrictBreakdown[];
 }
 
 interface AuditLogEntry {
@@ -64,10 +73,18 @@ function QuickAction({
 export default function DashboardPage() {
   const { user } = useAuth();
   const isAdmin = user ? ADMIN_ROLES.includes(user.role) : false;
+  const isUnrestricted = user ? UNRESTRICTED_ROLES.includes(user.role) : false;
+  const isDistrictScoped = user?.role === 'SENATORIAL_ADMIN';
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => api.get<DashboardStats>('/dashboard/stats'),
+  });
+
+  const { data: scopedLgas } = useQuery({
+    queryKey: ['dashboard-scoped-lgas'],
+    queryFn: () => api.get<OrgUnit[]>('/organization/lgas'),
+    enabled: isDistrictScoped,
   });
 
   const { data: recentActivity } = useQuery({
@@ -87,14 +104,66 @@ export default function DashboardPage() {
           <h2 className="font-heading text-lg font-semibold text-slate-900">
             {greeting()}, {user?.fullName?.split(' ')[0] ?? 'Administrator'}
           </h2>
-          <p className="text-sm text-slate-500">Overview of Gombe Central operations.</p>
+          <p className="text-sm text-slate-500">
+            {isUnrestricted
+              ? 'PDP Gombe State — State Overview'
+              : isDistrictScoped
+                ? `${user?.scopePath?.senatorialDistrict?.name ?? 'Your district'} — Administrative Scope`
+                : 'Overview of Gombe State operations.'}
+          </p>
         </div>
+
+        {isDistrictScoped && (
+          <Card className="mb-6 border-brand-200 bg-brand-50">
+            <CardContent className="flex flex-wrap items-center gap-3 py-4">
+              <MapPinned className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
+              <p className="font-heading text-base font-semibold text-brand-800">
+                {user?.scopePath?.senatorialDistrict?.name ?? 'Your district'}
+              </p>
+              <span className="text-brand-300">·</span>
+              <div className="flex flex-wrap gap-1.5">
+                {scopedLgas?.map((lga) => (
+                  <span
+                    key={lga.id}
+                    className="rounded-full border border-brand-200 bg-white px-2.5 py-0.5 text-xs font-medium text-brand-700"
+                  >
+                    {lga.name}
+                  </span>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isLoading && <LoadingState label="Loading dashboard…" />}
         {error && <ErrorState description="Unable to load dashboard statistics." onRetry={() => refetch()} />}
 
         {data && (
           <div className="space-y-6">
+            {isUnrestricted && data.districtBreakdown.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Senatorial Districts
+                </h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  {data.districtBreakdown.map((district) => (
+                    <Link
+                      key={district.id}
+                      href={`/members?senatorialDistrictId=${district.id}`}
+                      className="rounded-md border border-slate-200 bg-white p-4 transition-colors hover:border-brand-300 hover:bg-brand-50"
+                    >
+                      <p className="font-heading text-sm font-semibold text-slate-900">{district.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">{district.lgaCount} LGAs</p>
+                      <p className="mt-2 font-heading text-2xl font-semibold text-brand-700">
+                        {district.totalMembers.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-slate-500">members</p>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <StatCard label="Total Members" value={data.totalMembers} icon={Users} tone="default" />
               <StatCard label="Active Members" value={data.activeMembers} icon={UserCheck} tone="success" />

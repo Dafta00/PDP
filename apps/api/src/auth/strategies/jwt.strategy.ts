@@ -23,14 +23,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('Session is no longer valid.');
     }
+    const additionalScopes = await this.prisma.userScope.findMany({
+      where: { userId: user.id },
+      select: { senatorialDistrictId: true, lgaId: true, wardId: true, pollingUnitId: true },
+    });
     return {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      senatorialDistrictId: user.senatorialDistrictId,
       lgaId: user.lgaId,
       wardId: user.wardId,
       pollingUnitId: user.pollingUnitId,
+      canCreateUsers: user.canCreateUsers,
+      additionalScopes,
     };
   }
 }

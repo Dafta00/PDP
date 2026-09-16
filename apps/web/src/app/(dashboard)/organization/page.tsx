@@ -2,8 +2,9 @@
 
 import { FormEvent, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Plus, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
 import { useToast } from '@/lib/toast-context';
 import { OrgUnit } from '@/lib/types';
@@ -32,15 +33,24 @@ function DrillRow({ active, onClick, children }: { active: boolean; onClick: () 
 export default function OrganizationPage() {
   const showToast = useToast();
   const queryClient = useQueryClient();
+  const [districtId, setDistrictId] = useState('');
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
   const [newWardName, setNewWardName] = useState('');
   const [newPuName, setNewPuName] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const { data: districts } = useQuery({
+    queryKey: ['senatorial-districts'],
+    queryFn: () => api.get<OrgUnit[]>('/organization/senatorial-districts'),
+  });
+
   const { data: lgas } = useQuery({
-    queryKey: ['lgas'],
-    queryFn: () => api.get<OrgUnit[]>('/organization/lgas'),
+    queryKey: ['lgas', districtId],
+    queryFn: () =>
+      api.get<OrgUnit[]>(
+        districtId ? `/organization/lgas?senatorialDistrictId=${districtId}` : '/organization/lgas',
+      ),
   });
 
   const { data: wards } = useQuery({
@@ -93,23 +103,21 @@ export default function OrganizationPage() {
       <div className="p-4 sm:p-6">
         <PageHeader
           title="Organization"
-          description="Browse the Gombe Central hierarchy and manage wards and polling units."
+          description="Browse the Gombe State hierarchy and manage wards and polling units."
         />
 
         <div className="mb-6 flex items-center gap-4 rounded-md border border-slate-200 bg-white p-4">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md ring-1 ring-slate-200">
             <Image
               src="/brand/candidate.jpg"
-              alt="PDP Gombe Central Gubernatorial Candidate"
+              alt="PDP Gombe State Gubernatorial Candidate"
               fill
               className="object-cover object-top"
             />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-slate-900">Gubernatorial Candidate</p>
-            <p className="text-xs text-slate-500">
-              Peoples Democratic Party — Gombe Central Senatorial District
-            </p>
+            <p className="text-xs text-slate-500">Peoples Democratic Party — Gombe State</p>
           </div>
           <div className="hidden h-8 w-1 shrink-0 rounded-full bg-party-red sm:block" aria-hidden="true" />
           <Image
@@ -121,14 +129,47 @@ export default function OrganizationPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card>
             <CardHeader>
+              <CardTitle>Senatorial Districts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-xs text-slate-500">Select a district to view its LGAs.</p>
+              <div className="space-y-1">
+                {districts?.map((d) => (
+                  <DrillRow
+                    key={d.id}
+                    active={districtId === d.id}
+                    onClick={() => {
+                      setDistrictId(d.id);
+                      setLgaId('');
+                      setWardId('');
+                    }}
+                  >
+                    {d.name}
+                  </DrillRow>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>LGAs</CardTitle>
+              {lgaId && (
+                <Link
+                  href={`/members?lgaId=${lgaId}`}
+                  className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+                >
+                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                  View Members
+                </Link>
+              )}
             </CardHeader>
             <CardContent>
               <p className="mb-3 text-xs text-slate-500">
-                Verified for Gombe Central Senatorial District. Select an LGA to manage its wards.
+                {districtId ? 'Select an LGA to manage its wards.' : 'Select a senatorial district first.'}
               </p>
               <div className="space-y-1">
                 {lgas?.map((lga) => (
@@ -148,8 +189,17 @@ export default function OrganizationPage() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Wards {lgaId && `— ${lgas?.find((l) => l.id === lgaId)?.name}`}</CardTitle>
+              {wardId && (
+                <Link
+                  href={`/members?wardId=${wardId}`}
+                  className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+                >
+                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                  View Members
+                </Link>
+              )}
             </CardHeader>
             <CardContent>
               {!lgaId ? (
@@ -182,7 +232,7 @@ export default function OrganizationPage() {
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-3">
             <CardHeader>
               <CardTitle>
                 Polling Units {wardId && `— ${wards?.find((w) => w.id === wardId)?.name}`}
