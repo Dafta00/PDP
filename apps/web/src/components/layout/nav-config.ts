@@ -23,6 +23,7 @@ import {
   ListChecks,
   PackageSearch,
   Activity,
+  MessageSquare,
 } from 'lucide-react';
 import type { Role } from '@/lib/auth-context';
 
@@ -33,6 +34,8 @@ export interface NavItem {
   roles?: Role[];
   /** Visible only to a user with an active campaign membership — checked separately from `roles`, see canSeeNavItem. */
   campaignOnly?: boolean;
+  /** Fine-grained permission gate (checked via useAuth().hasPermission), in addition to any `roles` gate. */
+  permission?: string;
 }
 
 export interface NavSection {
@@ -92,6 +95,10 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    heading: 'Communications',
+    items: [{ label: 'Messages', href: '/messages', icon: MessageSquare, permission: 'messages.view' }],
+  },
+  {
     heading: 'Administration',
     items: [
       { label: 'Users & Roles', href: '/users', icon: UserCog, roles: USER_MANAGEMENT_ROLES },
@@ -120,8 +127,10 @@ export function canSeeNavItem(
   item: NavItem,
   user: { role: Role; canCreateUsers?: boolean } | undefined,
   hasCampaignMembership = false,
+  hasPermission: (permission: string) => boolean = () => true,
 ): boolean {
   if (item.campaignOnly) return hasCampaignMembership;
+  if (item.permission && !hasPermission(item.permission)) return false;
   if (!item.roles) return true;
   if (!user) return false;
   if (!item.roles.includes(user.role)) return false;

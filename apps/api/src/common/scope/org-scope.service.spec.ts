@@ -276,4 +276,79 @@ describe('OrgScopeService', () => {
       expect(await service.resolveScopePath(user)).toEqual({});
     });
   });
+
+  describe('canCommunicateWith — admin-messaging eligibility', () => {
+    it('a user may never message themselves', async () => {
+      const user = makeUser({ id: 'same', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      await expect(service.canCommunicateWith(user, user)).resolves.toBe(false);
+    });
+
+    it('SUPER_ADMIN can reach any scoped user', async () => {
+      const actor = makeUser({ id: 'a', role: Role.SUPER_ADMIN });
+      const target = makeUser({ id: 'b', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('any scoped user can reach a SUPER_ADMIN/STATE_ADMIN', async () => {
+      const actor = makeUser({ id: 'a', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      const target = makeUser({ id: 'b', role: Role.STATE_ADMIN });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('an LGA_ADMIN can reach a WARD_ADMIN whose ward is inside that LGA', async () => {
+      prismaMock.ward.findUnique.mockResolvedValue({ lgaId: 'lga-1', lga: { senatorialDistrictId: 'd1' } });
+      const actor = makeUser({ id: 'a', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      const target = makeUser({ id: 'b', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('the reverse direction also holds — the WARD_ADMIN can reach their LGA_ADMIN', async () => {
+      prismaMock.ward.findUnique.mockResolvedValue({ lgaId: 'lga-1', lga: { senatorialDistrictId: 'd1' } });
+      const actor = makeUser({ id: 'a', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      const target = makeUser({ id: 'b', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('an LGA_ADMIN cannot reach a WARD_ADMIN whose ward is in a DIFFERENT LGA', async () => {
+      prismaMock.ward.findUnique.mockResolvedValue({ lgaId: 'lga-2', lga: { senatorialDistrictId: 'd1' } });
+      const actor = makeUser({ id: 'a', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      const target = makeUser({ id: 'b', role: Role.WARD_ADMIN, wardId: 'ward-in-lga-2' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(false);
+    });
+
+    it('two WARD_ADMINs of unrelated wards cannot message each other', async () => {
+      prismaMock.ward.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          where.id === 'ward-1'
+            ? { lgaId: 'lga-1', lga: { senatorialDistrictId: 'd1' } }
+            : { lgaId: 'lga-2', lga: { senatorialDistrictId: 'd2' } },
+        ),
+      );
+      const actor = makeUser({ id: 'a', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      const target = makeUser({ id: 'b', role: Role.WARD_ADMIN, wardId: 'ward-2' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(false);
+    });
+
+    it('two users with the exact same scope (peers) can message each other', async () => {
+      const actor = makeUser({ id: 'a', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      const target = makeUser({ id: 'b', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('a POLLING_UNIT_OFFICER can reach the WARD_ADMIN of their own ward', async () => {
+      prismaMock.pollingUnit.findUnique.mockResolvedValue({
+        wardId: 'ward-1',
+        ward: { lgaId: 'lga-1', lga: { senatorialDistrictId: 'd1' } },
+      });
+      const actor = makeUser({ id: 'a', role: Role.POLLING_UNIT_OFFICER, pollingUnitId: 'pu-1' });
+      const target = makeUser({ id: 'b', role: Role.WARD_ADMIN, wardId: 'ward-1' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(true);
+    });
+
+    it('denies two unrelated users when neither scope contains the other', async () => {
+      const actor = makeUser({ id: 'a', role: Role.LGA_ADMIN, lgaId: 'lga-1' });
+      const target = makeUser({ id: 'b', role: Role.LGA_ADMIN, lgaId: 'lga-2' });
+      await expect(service.canCommunicateWith(actor, target)).resolves.toBe(false);
+    });
+  });
 });

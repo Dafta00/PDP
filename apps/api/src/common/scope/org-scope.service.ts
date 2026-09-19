@@ -430,6 +430,92 @@ export class OrgScopeService {
 
     return {};
   }
+
+  private async resolveAncestry(scope: ResolvedScope): Promise<GeoAncestry> {
+    switch (scope.level) {
+      case 'SENATORIAL_DISTRICT':
+        return { senatorialDistrictId: scope.id };
+      case 'LGA': {
+        const lga = await this.prisma.lGA.findUnique({
+          where: { id: scope.id },
+          select: { senatorialDistrictId: true },
+        });
+        return { senatorialDistrictId: lga?.senatorialDistrictId, lgaId: scope.id };
+      }
+      case 'WARD': {
+        const ward = await this.prisma.ward.findUnique({
+          where: { id: scope.id },
+          select: { lgaId: true, lga: { select: { senatorialDistrictId: true } } },
+        });
+        return { senatorialDistrictId: ward?.lga.senatorialDistrictId, lgaId: ward?.lgaId, wardId: scope.id };
+      }
+      case 'POLLING_UNIT': {
+        const pollingUnit = await this.prisma.pollingUnit.findUnique({
+          where: { id: scope.id },
+          select: { wardId: true, ward: { select: { lgaId: true, lga: { select: { senatorialDistrictId: true } } } } },
+        });
+        return {
+          senatorialDistrictId: pollingUnit?.ward.lga.senatorialDistrictId,
+          lgaId: pollingUnit?.ward.lgaId,
+          wardId: pollingUnit?.wardId,
+          pollingUnitId: scope.id,
+        };
+      }
+      default:
+        return {};
+    }
+  }
+
+  private isAncestorOrEqual(higher: ResolvedScope, lowerAncestry: GeoAncestry): boolean {
+    switch (higher.level) {
+      case 'SENATORIAL_DISTRICT':
+        return lowerAncestry.senatorialDistrictId === higher.id;
+      case 'LGA':
+        return lowerAncestry.lgaId === higher.id;
+      case 'WARD':
+        return lowerAncestry.wardId === higher.id;
+      case 'POLLING_UNIT':
+        return lowerAncestry.pollingUnitId === higher.id;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Admin-messaging eligibility: two administrative users may communicate
+   * if one's geographic authority contains (or equals) the other's — the
+   * same chain-of-command relationship this service already models for
+   * data access, applied symmetrically so a subordinate can reach their
+   * superior and a superior can reach a subordinate. Two users in unrelated
+   * branches of the hierarchy (e.g. WARD_ADMINs of two different wards)
+   * are NOT eligible — this is deliberate: "within their authority" per the
+   * messaging spec, not "anyone logged in." SUPER_ADMIN/STATE_ADMIN can
+   * reach, and be reached by, anyone. Never trust a client-submitted
+   * recipientId without re-running this check server-side.
+   */
+  async canCommunicateWith(actor: AuthenticatedUser, target: AuthenticatedUser): Promise<boolean> {
+    if (actor.id === target.id) return false;
+
+    const actorScopes = resolveAllScopes(actor);
+    const targetScopes = resolveAllScopes(target);
+
+    if (actorScopes.some((s) => s.level === 'UNRESTRICTED')) return true;
+    if (targetScopes.some((s) => s.level === 'UNRESTRICTED')) return true;
+
+    for (const actorScope of actorScopes) {
+      if (actorScope.level === 'NONE') continue;
+      for (const targetScope of targetScopes) {
+        if (targetScope.level === 'NONE') continue;
+
+        const targetAncestry = await this.resolveAncestry(targetScope);
+        if (this.isAncestorOrEqual(actorScope, targetAncestry)) return true;
+
+        const actorAncestry = await this.resolveAncestry(actorScope);
+        if (this.isAncestorOrEqual(targetScope, actorAncestry)) return true;
+      }
+    }
+    return false;
+  }
 }
 
 export interface ScopePath {
@@ -437,4 +523,11 @@ export interface ScopePath {
   lga?: { id: string; name: string };
   ward?: { id: string; name: string };
   pollingUnit?: { id: string; name: string };
+}
+
+interface GeoAncestry {
+  senatorialDistrictId?: string;
+  lgaId?: string;
+  wardId?: string;
+  pollingUnitId?: string;
 }

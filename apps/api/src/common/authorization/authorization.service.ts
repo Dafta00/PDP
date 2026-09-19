@@ -433,6 +433,18 @@ export class AuthorizationService {
     return this.hasPermission(actor, 'reports.view');
   }
 
+  /**
+   * Absolute NIN-visibility rule: SUPER_ADMIN only, deliberately NOT
+   * permission-based. Every other check in this service can be widened by
+   * granting a permission (UserPermission GRANT) or an additional scope —
+   * NIN access must never be grantable that way, so this is a hard role
+   * check with no override path. Callers must gate the decrypted value on
+   * this, not on any permission string.
+   */
+  canViewMemberNIN(actor: AuthenticatedUser): boolean {
+    return actor.role === Role.SUPER_ADMIN;
+  }
+
   // ────────────────────────── Role permission defaults ─────────────────────
 
   /** Every role's current default permission set — DB-backed with the code fallback, same as getRolePermissions. */

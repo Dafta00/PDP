@@ -90,6 +90,11 @@ model User {
   distributionReceiptsReversed DistributionReceipt[] @relation("ReceiptReversedBy")
   documentsUploaded            Document[]            @relation("DocumentUploadedBy")
 
+  // Admin-only internal messaging — see the Messaging section near the end
+  // of this schema. Members (the constituents) never participate here.
+  messagesSent     Message[] @relation("MessageSender")
+  messagesReceived Message[] @relation("MessageRecipient")
+
   // Campaign Operations — this user's CAMPAIGN identity (memberships) is
   // entirely separate from their administrative Role/scope above; see the
   // schema header note before the Campaign models.
@@ -367,6 +372,23 @@ enum MemberStatus {
   SUSPENDED
 }
 
+// Structured education levels for Member.educationLevel — kept as a closed
+// enum (not free text) per data-quality convention; OTHER pairs with
+// Member.educationLevelOther for the one-line free-text specification.
+enum EducationLevel {
+  NO_FORMAL_EDUCATION
+  PRIMARY
+  SECONDARY
+  NCE
+  ND
+  HND
+  BACHELORS_DEGREE
+  POSTGRADUATE_DIPLOMA
+  MASTERS_DEGREE
+  PHD
+  OTHER
+}
+
 model Member {
   id           String @id @default(cuid())
   membershipId String @unique // e.g. PDP-GC-2026-000001
@@ -380,6 +402,23 @@ model Member {
   email       String?
   address     String?
   occupation  String?
+
+  educationLevel      EducationLevel?
+  educationLevelOther String? // only meaningful when educationLevel = OTHER
+
+  // NIN is highly sensitive: never stored in plaintext. `ninEncrypted` holds
+  // an AES-256-GCM ciphertext (see common/crypto/field-encryption.ts);
+  // `ninHash` is a deterministic HMAC used only for uniqueness lookups and
+  // is never decryptable. Only AuthorizationService.canViewMemberNIN(actor)
+  // (SUPER_ADMIN only) may see the decrypted value — enforced in
+  // members.service.ts, not by hiding the column here.
+  ninEncrypted String?
+  ninHash      String? @unique
+
+  // PVC (Permanent Voter's Card) identification number — a unique
+  // identifier like membershipId/email, not NIN-tier sensitive, so stored
+  // as a normalized plain string per this schema's existing convention.
+  pvcNumber String? @unique
 
   pollingUnitId String
   pollingUnit   PollingUnit @relation(fields: [pollingUnitId], references: [id])
@@ -416,6 +455,7 @@ model Member {
   @@index([surname, firstName])
   @@index([phone])
   @@index([email])
+  @@index([educationLevel])
 }
 
 enum QRCodeStatus {
@@ -1216,4 +1256,61 @@ model CampaignActivity {
   @@index([lgaId])
   @@index([wardId])
   @@index([pollingUnitId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Admin-only internal messaging — one-to-one sender/recipient rows; a reply
+// is a new Message row linked via parentMessageId (no separate thread
+// table). Members never appear here; both parties are always Users, and
+// eligibility is enforced by OrgScopeService.canCommunicateWith at the
+// service layer (role hierarchy + geographic scope), not by this schema.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Message {
+  id String @id @default(cuid())
+
+  senderId    String
+  sender      User   @relation("MessageSender", fields: [senderId], references: [id])
+  recipientId String
+  recipient   User   @relation("MessageRecipient", fields: [recipientId], references: [id])
+
+  subject String
+  body    String
+
+  parentMessageId String?
+  parentMessage   Message?  @relation("MessageReplies", fields: [parentMessageId], references: [id])
+  replies         Message[] @relation("MessageReplies")
+
+  readAt DateTime?
+
+  // Per-side soft removal from the mailbox view — never a hard delete, so
+  // the other participant's copy and any audit trail are unaffected.
+  deletedBySender    Boolean @default(false)
+  deletedByRecipient Boolean @default(false)
+
+  attachments MessageAttachment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([recipientId, readAt])
+  @@index([parentMessageId])
+  @@index([createdAt])
+}
+
+model MessageAttachment {
+  id        String  @id @default(cuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  fileName       String // original filename, shown to users
+  storedFileName String @unique // randomized name on disk, never derived from fileName
+  mimeType       String
+  fileSize       Int // bytes
+
+  createdAt DateTime @default(now())
+
+  @@index([messageId])
 }

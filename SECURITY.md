@@ -46,7 +46,18 @@ to it.
 - A restricted document (`restrictedToAdmins: true`) that a non-admin requests returns **404 Not Found**, not 403 Forbidden — deliberately, per the code comment in `documents.service.ts`: a 403 would itself confirm the document exists. Every download of a restricted document is separately audited (`RESTRICTED_DOCUMENT_DOWNLOADED`).
 
 ### QR verification
-- QR tokens are opaque (`crypto.randomBytes(24).toString('base64url')`, `qr.service.ts`) — no member PII is encoded in the token itself; the token resolves to a member only via a server-side database lookup, so a captured/photographed QR code leaks nothing on its own beyond an opaque identifier.
+- QR tokens are opaque (`crypto.randomBytes(24).toString('base64url')`, `qr.service.ts`) — no member PII is encoded in the token itself; the token resolves to a member only via a server-side database lookup, so a captured/photographed QR code leaks nothing on its own beyond an opaque identifier. Member NIN/PVC are never encoded into it either.
+
+### Sensitive member data (NIN) — see `AUTHORIZATION.md` §10
+- National Identification Numbers are encrypted at rest (AES-256-GCM, `common/crypto/field-encryption.ts`) — the plaintext is never stored, indexed, logged, or returned in the member list/search/report/export projections.
+- Uniqueness is enforced via a separate deterministic HMAC (`Member.ninHash`, `@unique`) so duplicates can be detected without ever decrypting anything; the unique index is the final, race-condition-proof backstop behind an application-level pre-check.
+- `AuthorizationService.canViewMemberNIN(actor)` is a hard `role === SUPER_ADMIN` check, not permission-based — it cannot be widened by a `UserPermission` GRANT the way every other capability in this system can. Every decrypted reveal is audit-logged (`MEMBER_NIN_VIEWED`); every duplicate-registration attempt is audit-logged (`MEMBER_DUPLICATE_NIN_ATTEMPT`) without the raw value.
+
+### Admin-only internal messaging — see `AUTHORIZATION.md` §10
+- Members never participate; both parties on a `Message` are administrative `User`s only, gated by the `messages.view`/`messages.send` permissions.
+- Send-eligibility and every read/attachment-download re-derive authorization server-side from `OrgScopeService.canCommunicateWith(actor, target)` — a client-submitted recipient/message id is never trusted on its own.
+- Reading or downloading an attachment for a message the actor is not a participant in returns **404 Not Found**, matching the `documents.service.ts` convention, and is separately audited (`MESSAGE_AUTHORIZATION_DENIED`).
+- Attachments are stored in `message-attachments/` (outside the public `/uploads` static directory) and served only through an authenticated, participant-checked download endpoint — the same pattern as `document-storage/`.
 
 ## Recommended future improvements (not implemented)
 

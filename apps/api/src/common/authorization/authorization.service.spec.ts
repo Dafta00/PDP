@@ -194,4 +194,32 @@ describe('AuthorizationService', () => {
       expect(auditService.record).not.toHaveBeenCalled();
     });
   });
+
+  describe('canViewMemberNIN — absolute SUPER_ADMIN-only rule', () => {
+    it('allows SUPER_ADMIN', () => {
+      const { service } = makeDeps();
+      expect(service.canViewMemberNIN(makeActor({ role: Role.SUPER_ADMIN }))).toBe(true);
+    });
+
+    it.each([
+      Role.STATE_ADMIN,
+      Role.SENATORIAL_ADMIN,
+      Role.LGA_ADMIN,
+      Role.WARD_ADMIN,
+      Role.POLLING_UNIT_OFFICER,
+      Role.DATA_ENTRY_OFFICER,
+    ])('denies %s', (role) => {
+      const { service } = makeDeps();
+      expect(service.canViewMemberNIN(makeActor({ role }))).toBe(false);
+    });
+
+    it('is not affected by a UserPermission GRANT — the rule has no permission-based override path', () => {
+      const { service } = makeDeps();
+      // Even if some future code mistakenly tried to grant a "view NIN"
+      // permission to a non-SUPER_ADMIN, canViewMemberNIN never consults
+      // the permission system at all — it is a hard role check.
+      const actor = makeActor({ role: Role.STATE_ADMIN });
+      expect(service.canViewMemberNIN(actor)).toBe(false);
+    });
+  });
 });

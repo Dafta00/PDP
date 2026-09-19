@@ -1,21 +1,24 @@
 # Database
 
 Single PostgreSQL 16 database, one schema, managed entirely through Prisma
-5 (`apps/api/prisma/schema.prisma`, 1219 lines). This document was written
-by reading that file in full plus all 12 migrations
-(`apps/api/prisma/migrations/`) — every model, field, relation, index, and
-constraint below exists as written; nothing here is aspirational.
+5 (`apps/api/prisma/schema.prisma`). This document was written by reading
+that file in full plus all 13 migrations (`apps/api/prisma/migrations/`) —
+every model, field, relation, index, and constraint below exists as
+written; nothing here is aspirational.
 
 Migrations, in order: `init` → `events_attendance` → `resources` →
 `distribution` → `documents` → `add_senatorial_admin_scope` →
 `add_org_unit_code_and_status` → `drop_polling_unit_ward_name_unique` →
 `add_polling_unit_provenance_and_indexes` → `add_user_can_create_users` →
-`add_permissions_and_multi_scope` → `add_campaign_operations`. All are
-additive/corrective (new tables, new nullable columns, new indexes, one
-constraint removal to accommodate a real-world data shape — see
-"Notable schema decisions" below); none rewrites existing data.
+`add_permissions_and_multi_scope` → `add_campaign_operations` →
+`add_member_education_nin_pvc_and_messaging`. All are additive/corrective
+(new tables, new nullable columns, new indexes, one constraint removal to
+accommodate a real-world data shape — see "Notable schema decisions"
+below); none rewrites existing data. The final migration adds
+`Member.educationLevel`/`educationLevelOther`/`ninEncrypted`/`ninHash`/`pvcNumber`
+(all nullable) and the `Message`/`MessageAttachment` models — see §3 and §8b.
 
-**33 models** across 8 sections, described below in schema order.
+**36 models** across 9 sections, described below in schema order.
 
 ## 1. Auth / RBAC
 
@@ -55,7 +58,11 @@ See `GEOGRAPHY.md` for what data actually populates this hierarchy today.
 ## 3. Membership
 
 - **`Member`** — party membership record. `membershipId` (unique, generated), demographic fields, required `pollingUnitId`/`wardId`/`lgaId` (denormalized ancestor chain, all three always set — not just the leaf), `status` (`PENDING`/`ACTIVE`/`INACTIVE`/`SUSPENDED`), soft-delete via nullable `deletedAt`. Indexed on each scope FK, `status`, `[surname, firstName]`, `phone`, `email`.
-- **`MemberQRCode`** — one-to-one with `Member`, `token` unique and opaque (no PII encoded — see `qr.service.ts`), `status` (`ACTIVE`/`REVOKED`).
+  - `educationLevel` (`EducationLevel?` enum — closed vocabulary, not free text) + `educationLevelOther` (only meaningful when `educationLevel = OTHER`).
+  - `ninEncrypted` (`String?`, AES-256-GCM ciphertext, base64) + `ninHash` (`String? @unique`, deterministic HMAC-SHA256) — the National Identification Number is **never stored in plaintext or indexed**; `ninHash` exists solely so a duplicate NIN can be detected without ever decrypting anything. See `common/crypto/field-encryption.ts` and `AUTHORIZATION.md` §10 for the SUPER_ADMIN-only read path.
+  - `pvcNumber` (`String? @unique`) — the PVC (Permanent Voter's Card) identifier, normalized (trimmed, uppercased) before storage; a plain unique string like `membershipId`/`email`, not encrypted (not NIN-tier sensitive per the platform's data classification).
+  - All three groups are nullable so every pre-existing member row remains valid; nothing in this migration touches or backfills existing data.
+- **`MemberQRCode`** — one-to-one with `Member`, `token` unique and opaque (no PII encoded — see `qr.service.ts`), `status` (`ACTIVE`/`REVOKED`). NIN/PVC are never encoded into this token or its rendered image.
 
 ## 4. Audit log
 
@@ -87,6 +94,12 @@ See `GEOGRAPHY.md` for what data actually populates this hierarchy today.
 ## 8. Documents
 
 - **`Document`** — `storedFileName` (randomized, unique, distinct from the user-facing `fileName`), `restrictedToAdmins` (bool). Files live outside the public `/uploads` static path and are served only through an authenticated, permission-checked download endpoint — the schema comment states a restricted document "must never be reachable by URL alone," consistent with the controller behavior described in `SECURITY.md`. Soft-delete via `deletedAt`.
+
+## 8b. Admin-only internal messaging
+
+- **`Message`** — one row per sender→recipient exchange, both always `User`s (never a `Member`). `subject`/`body`, `readAt` (nullable — unread until the recipient opens it), `parentMessageId` (self-referential FK; a reply is a new row linked to the original, not a separate thread table), per-side `deletedBySender`/`deletedByRecipient` booleans (mailbox-view soft removal only — never a hard delete, so the other participant's copy and any audit trail are unaffected). Indexed on `senderId`, `recipientId`, `[recipientId, readAt]` (unread-count queries), `parentMessageId`, `createdAt`.
+- **`MessageAttachment`** — `fileName` (original, shown to users) vs. `storedFileName` (randomized, unique, on-disk name — same convention as `Document.storedFileName`), `mimeType`/`fileSize`. Cascades on `Message` delete. Files live in `message-attachments/` (git-ignored, outside the public `/uploads` static path) and are served only through an authenticated, per-message-participant-checked download endpoint — see `AUTHORIZATION.md` §10.
+- Eligibility to create a `Message` (and to read/download an existing one) is authorization logic, not a schema constraint — see `OrgScopeService.canCommunicateWith` in `AUTHORIZATION.md` §7/§10.
 
 ## 9. Campaign Operations
 

@@ -1,10 +1,12 @@
 # PDP Gombe State Management Platform
 
 A party membership, administrative, and campaign-operations platform for
-PDP Gombe State — covering party membership, organizational hierarchy,
-events/attendance, resources, distribution, documents, reporting, and a
-separate Campaign Operations module for the PDP Gombe State 2027
-Governorship campaign (candidate: Professor Isa Ali Ibrahim Pantami).
+PDP Gombe State — covering party membership (including education level,
+NIN, and PVC identification with strict SUPER_ADMIN-only NIN access),
+organizational hierarchy, events/attendance, resources, distribution,
+documents, reporting, admin-only internal messaging, and a separate
+Campaign Operations module for the PDP Gombe State 2027 Governorship
+campaign (candidate: Professor Isa Ali Ibrahim Pantami).
 
 One application, one authentication system, one PostgreSQL database, one
 geographic hierarchy — with administrative and campaign authorization
@@ -48,7 +50,7 @@ was written directly against the current codebase (not a target design):
 |---|---|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System shape, stack, monorepo layout, request flow, frontend state, testing |
 | [`AUTHORIZATION.md`](./AUTHORIZATION.md) | Administrative & campaign roles, permissions, geographic scope, role hierarchy, privilege-escalation and self-escalation prevention |
-| [`DATABASE.md`](./DATABASE.md) | All 33 Prisma models, relationships, and notable schema decisions |
+| [`DATABASE.md`](./DATABASE.md) | All 36 Prisma models, relationships, and notable schema decisions |
 | [`GEOGRAPHY.md`](./GEOGRAPHY.md) | State→District→LGA→Ward→PollingUnit hierarchy, real INEC data provenance, seeded vs. imported data, validation |
 | [`CAMPAIGN.md`](./CAMPAIGN.md) | The Campaign Operations module: roles, permissions, API, frontend pages, resource reuse, disclosed gaps |
 | [`SECURITY.md`](./SECURITY.md) | Implemented security controls vs. recommended future improvements |
@@ -60,12 +62,14 @@ was written directly against the current codebase (not a target design):
 pnpm test:api
 ```
 
-15 Jest suites, 179 unit tests (mocked Prisma client, no test database) —
+18 Jest suites, 227 unit tests (mocked Prisma client, no test database) —
 covering authentication, RBAC/permission/scope logic for both the
 administrative and campaign domains (including explicit IDOR/privilege-
 escalation attempts), membership ID sequencing, QR issue/resolve/revoke,
 attendance/receipt duplicate-prevention, resource atomic-quantity guards,
-document visibility, and scope-filtered reporting.
+document visibility, scope-filtered reporting, NIN field-level encryption
+and the SUPER_ADMIN-only view rule, duplicate NIN/PVC detection, and
+admin-messaging authorization (scope containment, IDOR/BOLA attempts).
 
 ## Known simplifications
 

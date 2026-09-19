@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { MemberStatus } from '@prisma/client';
+import { EducationLevel, MemberStatus } from '@prisma/client';
 
 export class QueryMemberDto {
   @IsOptional()
@@ -9,6 +9,18 @@ export class QueryMemberDto {
   @IsOptional()
   @IsEnum(MemberStatus)
   status?: MemberStatus;
+
+  @IsOptional()
+  @IsEnum(EducationLevel)
+  educationLevel?: EducationLevel;
+
+  // Exact-match lookup only (never a `contains` substring search) — finding
+  // the one member who holds a given PVC identifier is a legitimate
+  // uniqueness/lookup use case; enumerating PVC values via partial search is
+  // not, per the data-minimization requirement on this field.
+  @IsOptional()
+  @IsString()
+  pvcNumber?: string;
 
   @IsOptional()
   @IsString()

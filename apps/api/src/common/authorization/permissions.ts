@@ -63,6 +63,12 @@ export const PERMISSIONS = [
 
   'settings.view',
   'settings.manage',
+
+  // Admin-only internal messaging — actual recipient eligibility is still
+  // enforced per-message by OrgScopeService.canCommunicateWith; these two
+  // permissions only gate "may use the messaging module at all".
+  'messages.view',
+  'messages.send',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -102,6 +108,8 @@ const OPERATIONAL: Permission[] = [
   'reports.generate',
   'reports.export',
   'users.view',
+  'messages.view',
+  'messages.send',
 ];
 
 /**
@@ -151,6 +159,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'distributions.view',
     'distributions.verify',
     'reports.view',
+    'messages.view',
+    'messages.send',
   ],
   [Role.DATA_ENTRY_OFFICER]: [
     'dashboard.view',
@@ -162,6 +172,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'events.view',
     'attendance.manage',
     'reports.view',
+    'messages.view',
+    'messages.send',
   ],
 };
 

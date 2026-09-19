@@ -220,6 +220,13 @@ module rather than reimplemented:
 A parallel `scopeWhere()` exists in `CampaignAuthorizationService` for the
 same purpose inside the campaign module.
 
+`OrgScopeService.canCommunicateWith(actor, target)` extends this same
+geography model to admin-to-admin messaging (see §10) — two administrative
+users may message each other when one's assigned unit contains (or equals)
+the other's, computed via the same ancestor-resolution logic as
+`eventScopeWhere`. It never widens data-visibility scope; it only answers
+"may these two accounts exchange messages".
+
 ## 8. IDOR / BOLA prevention
 
 No endpoint that accepts an id in the URL trusts that id alone.
@@ -234,15 +241,48 @@ knowing a valid id for a record outside your scope still yields a
 
 ## 9. What is verified vs. what is not
 
-Verified by direct code inspection and a passing test suite (179/179 as of
+Verified by direct code inspection and a passing test suite (227/227 as of
 this writing, `pnpm --filter api test`):
 - Role rank hierarchy (both domains) and the `SUPER_ADMIN`/`CAMPAIGN_SUPER_ADMIN` exemption
 - Geographic containment logic, including ancestor resolution
 - Self-escalation blocking
 - Permission delegation allowlist
 - Audit logging of denials
+- The absolute SUPER_ADMIN-only NIN rule and admin-messaging scope containment (§10)
 
 Not implemented (do not assume these exist):
 - No UI or API exists for a non-`SUPER_ADMIN` to request elevated access ("approval workflow") — escalation requests simply don't exist as a concept.
 - No time-boxed/temporary role or scope grants — every assignment is permanent until explicitly changed.
 - No campaign-side equivalent of `UserScope` (multi-scope grants) — a `CampaignMembership` has exactly one scope, full stop.
+
+## 10. Sensitive member data (NIN) and admin messaging
+
+**NIN — absolute SUPER_ADMIN-only rule.** `AuthorizationService.canViewMemberNIN(actor)`
+(`apps/api/src/common/authorization/authorization.service.ts`) is a hard role
+check — `return actor.role === Role.SUPER_ADMIN` — deliberately **not**
+permission-based, so it can never be widened by a `UserPermission` GRANT the
+way every other capability in this system can. `MembersService` is the only
+caller: its private `shapeMemberDetail()` strips `ninEncrypted`/`ninHash`
+from every response and only attaches a decrypted `nin` field when this
+check passes, logging `AuditAction.MEMBER_NIN_VIEWED` each time it does. NIN
+is stored encrypted (`Member.ninEncrypted`, AES-256-GCM via
+`common/crypto/field-encryption.ts`) with a separate deterministic HMAC
+(`Member.ninHash`, `@unique`) backing duplicate detection — the plaintext is
+never indexed, logged, or present in the member list/search/report/export
+projections at all, only the single detail-response path above.
+
+**Admin-only internal messaging.** Members never participate — both parties
+on a `Message` row are always administrative `User`s. Eligibility to send
+*and* every read/download is authorized by
+`OrgScopeService.canCommunicateWith(actor, target)` (§7), re-derived from the
+database on every request — a client-submitted `recipientId` is never
+trusted as proof of authorization, and `messages.view`/`messages.send`
+gate the module's endpoints on top of that. Reading a message the actor is
+neither the sender nor recipient of returns `404 Not Found` (never `403`),
+matching the existing "don't confirm existence" convention from `Document`
+(§8); the same 404-not-403 rule applies to attachment downloads. Denied
+sends and unauthorized read attempts are audit-logged
+(`MESSAGE_AUTHORIZATION_DENIED`). See `messages.service.spec.ts` and the
+`canCommunicateWith` cases in `org-scope.service.spec.ts` for the verified
+scope-containment matrix (superior↔subordinate allowed, unrelated same-level
+peers denied, `SUPER_ADMIN`/`STATE_ADMIN` unrestricted both ways).

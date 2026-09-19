@@ -7,7 +7,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, UserPlus, Users } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { useAuth, UNRESTRICTED_ROLES } from '@/lib/auth-context';
-import { MemberListItem, MemberStatus, OrgUnit, PaginatedResult } from '@/lib/types';
+import { EducationLevel, MemberListItem, MemberStatus, OrgUnit, PaginatedResult } from '@/lib/types';
+import { EDUCATION_LEVEL_OPTIONS } from '@/lib/education-levels';
 import { Topbar } from '@/components/layout/topbar';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input, Select } from '@/components/ui/input';
@@ -27,6 +28,7 @@ export default function MembersPage() {
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<MemberStatus | 'ALL'>('ALL');
+  const [educationLevel, setEducationLevel] = useState<EducationLevel | 'ALL'>('ALL');
   const [page, setPage] = useState(1);
   const [districtId, setDistrictId] = useState(searchParams.get('senatorialDistrictId') ?? '');
   const [lgaId, setLgaId] = useState(searchParams.get('lgaId') ?? '');
@@ -81,11 +83,12 @@ export default function MembersPage() {
   }, [districtId, lgaId, wardId, pollingUnitId]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['members', search, status, page, districtId, lgaId, wardId, pollingUnitId],
+    queryKey: ['members', search, status, educationLevel, page, districtId, lgaId, wardId, pollingUnitId],
     queryFn: () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (search) params.set('search', search);
       if (status !== 'ALL') params.set('status', status);
+      if (educationLevel !== 'ALL') params.set('educationLevel', educationLevel);
       if (districtId) params.set('senatorialDistrictId', districtId);
       if (lgaId) params.set('lgaId', lgaId);
       if (wardId) params.set('wardId', wardId);
@@ -135,6 +138,22 @@ export default function MembersPage() {
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
                 {s === 'ALL' ? 'All statuses' : s}
+              </option>
+            ))}
+          </Select>
+
+          <Select
+            value={educationLevel}
+            onChange={(e) => {
+              setEducationLevel(e.target.value as EducationLevel | 'ALL');
+              setPage(1);
+            }}
+            className="sm:max-w-[180px]"
+          >
+            <option value="ALL">All education levels</option>
+            {EDUCATION_LEVEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
               </option>
             ))}
           </Select>

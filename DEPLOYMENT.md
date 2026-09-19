@@ -33,6 +33,8 @@ JWT_ACCESS_EXPIRES_IN="15m"
 JWT_REFRESH_SECRET="change-me-refresh-secret"
 JWT_REFRESH_EXPIRES_IN="7d"
 QR_SIGNING_SECRET="change-me-qr-secret"
+NIN_ENCRYPTION_KEY="change-me-64-char-hex-aes-256-key"
+NIN_HASH_SECRET="change-me-64-char-hex-hmac-secret"
 PORT=4055
 CORS_ORIGIN="http://localhost:3055"
 SEED_SUPER_ADMIN_EMAIL="admin@pdpgombecentral.org"
@@ -42,6 +44,7 @@ NEXT_PUBLIC_API_URL="http://localhost:4055"
 
 **Production checklist implied by the code, not just convention**:
 - `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`/`QR_SIGNING_SECRET` must be changed from the placeholder values — nothing in the code refuses to boot with the placeholder, so this is not enforced, only expected.
+- `NIN_ENCRYPTION_KEY`/`NIN_HASH_SECRET` (each 64 hex chars / 32 bytes, generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) must be set to unique per-environment values before any member NIN is registered — unlike the JWT/QR secrets, a missing or malformed value here throws at the point of use (`common/crypto/field-encryption.ts`) rather than silently degrading, and rotating either value after real NINs are stored will make existing encrypted/hashed values unreadable/unmatchable.
 - `CORS_ORIGIN` must be set explicitly. If left unset, `main.ts` falls back to `origin: true` (reflects any request origin) — safe for local dev, a real risk if forgotten in production (see `SECURITY.md`).
 - `SEED_SUPER_ADMIN_EMAIL`/`SEED_SUPER_ADMIN_PASSWORD` should be overridden before running the seed against a real environment — the defaults are checked into `.env.example` and are not a secret.
 

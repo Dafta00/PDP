@@ -21,6 +21,7 @@ import { DistributionsModule } from './distributions/distributions.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ReportsModule } from './reports/reports.module';
 import { CampaignModule } from './campaign/campaign.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { CampaignModule } from './campaign/campaign.module';
     DocumentsModule,
     ReportsModule,
     CampaignModule,
+    MessagesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

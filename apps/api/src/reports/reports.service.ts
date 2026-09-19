@@ -1,11 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { EventStatus, MemberStatus, Prisma, ResourceTransactionType } from '@prisma/client';
+import { EducationLevel, EventStatus, MemberStatus, Prisma, ResourceTransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrgScopeService } from '../common/scope/org-scope.service';
 import { memberScopeToSql } from '../common/scope/member-scope-sql';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 
 const MEMBER_STATUSES: MemberStatus[] = ['PENDING', 'ACTIVE', 'INACTIVE', 'SUSPENDED'];
+const EDUCATION_LEVELS: EducationLevel[] = [
+  'NO_FORMAL_EDUCATION',
+  'PRIMARY',
+  'SECONDARY',
+  'NCE',
+  'ND',
+  'HND',
+  'BACHELORS_DEGREE',
+  'POSTGRADUATE_DIPLOMA',
+  'MASTERS_DEGREE',
+  'PHD',
+  'OTHER',
+];
 const EVENT_STATUSES: EventStatus[] = ['DRAFT', 'UPCOMING', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
 
 @Injectable()
@@ -21,18 +34,31 @@ export class ReportsService {
     const memberScope = this.orgScope.memberScopeWhere(actor);
     const baseWhere: Prisma.MemberWhereInput = { deletedAt: null, ...memberScope };
 
-    const [total, byStatusCounts, lgas, wards, visibleUnits] = await Promise.all([
-      this.prisma.member.count({ where: baseWhere }),
-      Promise.all(
-        MEMBER_STATUSES.map(async (status) => ({
-          status,
-          count: await this.prisma.member.count({ where: { ...baseWhere, status } }),
-        })),
-      ),
-      this.prisma.lGA.findMany({ select: { id: true, name: true } }),
-      this.prisma.ward.findMany({ select: { id: true, name: true, lgaId: true } }),
-      this.orgScope.resolveVisibleUnits(actor),
-    ]);
+    const [total, byStatusCounts, byEducationCounts, notSpecifiedEducationCount, lgas, wards, visibleUnits] =
+      await Promise.all([
+        this.prisma.member.count({ where: baseWhere }),
+        Promise.all(
+          MEMBER_STATUSES.map(async (status) => ({
+            status,
+            count: await this.prisma.member.count({ where: { ...baseWhere, status } }),
+          })),
+        ),
+        Promise.all(
+          EDUCATION_LEVELS.map(async (educationLevel) => ({
+            educationLevel,
+            count: await this.prisma.member.count({ where: { ...baseWhere, educationLevel } }),
+          })),
+        ),
+        this.prisma.member.count({ where: { ...baseWhere, educationLevel: null } }),
+        this.prisma.lGA.findMany({ select: { id: true, name: true } }),
+        this.prisma.ward.findMany({ select: { id: true, name: true, lgaId: true } }),
+        this.orgScope.resolveVisibleUnits(actor),
+      ]);
+
+    const byEducationLevel = [
+      ...byEducationCounts,
+      { educationLevel: 'NOT_SPECIFIED' as const, count: notSpecifiedEducationCount },
+    ];
 
     // Restrict which units even get enumerated to ones the actor can see.
     // This matters beyond just trimming the list: `{ ...baseWhere, lgaId }`
@@ -85,6 +111,7 @@ export class ReportsService {
     return {
       total,
       byStatus: byStatusCounts,
+      byEducationLevel,
       byLga,
       byWard,
       registrationTrend: registrationTrend.map((r) => ({ month: r.month, count: Number(r.count) })).reverse(),

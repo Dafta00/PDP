@@ -4,8 +4,10 @@ import { useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useCampaignMe, useCurrentCampaign } from '@/lib/campaign-hooks';
+import { api } from '@/lib/api-client';
 import { NAV_SECTIONS, canSeeNavItem } from './nav-config';
 import { ScopeLine } from './scope-indicator';
 import { cn } from '@/lib/utils';
@@ -30,11 +32,18 @@ function bestMatchHref(pathname: string | null, sections: typeof NAV_SECTIONS): 
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { data: campaign } = useCurrentCampaign();
   const { data: campaignMe } = useCampaignMe(campaign?.id);
   const hasCampaignMembership = !!campaignMe?.membership;
   const activeHref = bestMatchHref(pathname, NAV_SECTIONS);
+
+  const { data: unread } = useQuery({
+    queryKey: ['messages-unread-count'],
+    queryFn: () => api.get<{ count: number }>('/messages/unread-count'),
+    enabled: !!user && hasPermission('messages.view'),
+    refetchInterval: 30_000,
+  });
 
   return (
     <>
@@ -59,7 +68,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
         {NAV_SECTIONS.map((section, sectionIndex) => {
           const items = section.items.filter((item) =>
-            canSeeNavItem(item, user ?? undefined, hasCampaignMembership),
+            canSeeNavItem(item, user ?? undefined, hasCampaignMembership, hasPermission),
           );
           if (items.length === 0) return null;
           return (
@@ -91,7 +100,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         strokeWidth={2}
                         aria-hidden="true"
                       />
-                      <span className="truncate">{item.label}</span>
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {item.href === '/messages' && !!unread?.count && (
+                        <span
+                          className={cn(
+                            'flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-xs font-semibold',
+                            active ? 'bg-white text-brand-700' : 'bg-red-600 text-white',
+                          )}
+                        >
+                          {unread.count > 99 ? '99+' : unread.count}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
